@@ -1,0 +1,22 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    # Reminderski targets Win32, so it is built and tested on Windows only.
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: rustup component add rustfmt clippy
+      - run: cargo fmt --check
+      # Clippy policy lives in Cargo.toml; -D warnings additionally fails CI on
+      # plain rustc warnings, which stay non-fatal during local development.
+      - run: cargo clippy --all-targets -- -D warnings
+      - run: cargo build
+      - run: cargo test
