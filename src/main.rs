@@ -1,5 +1,6 @@
 mod capture;
 mod clipboard;
+mod form;
 
 use std::io;
 use std::mem;
@@ -43,19 +44,23 @@ fn run_message_loop() {
             return;
         }
         if message.message == WM_HOTKEY {
-            report(capture::capture_selection());
+            on_hotkey();
         }
     }
 }
 
-/// Prints the captured text. Stands in for the input form until the next step of M2.
-fn report(captured: io::Result<Option<String>>) {
-    match captured {
-        Ok(Some(text)) => println!(
-            "--- captured {} chars ---\n{text}\n---",
-            text.chars().count()
-        ),
-        Ok(None) => println!("--- nothing captured; a blank form would open ---"),
-        Err(error) => eprintln!("--- capture failed: {error} ---"),
+fn on_hotkey() {
+    // A failed capture still opens the form, blank. Losing the user's keystroke because their
+    // clipboard misbehaved would be worse than starting from an empty box.
+    let captured = capture::capture_selection().unwrap_or_else(|error| {
+        eprintln!("capture failed: {error}");
+        None
+    });
+
+    match form::show(captured.as_deref().unwrap_or_default()) {
+        // M3 turns this into a stored reminder.
+        Ok(Some(text)) => println!("--- submitted ---\n{text}\n---"),
+        Ok(None) => println!("--- cancelled ---"),
+        Err(error) => eprintln!("could not open the form: {error}"),
     }
 }
