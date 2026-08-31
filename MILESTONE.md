@@ -10,6 +10,8 @@ The plan may be adjusted when development reveals new information, but avoid add
 
 ## M1 — Repository Setup
 
+**Status: done.**
+
 **Goal:** Establish the smallest working Rust project.
 
 ### Work
@@ -29,6 +31,8 @@ The plan may be adjusted when development reveals new information, but avoid add
 ---
 
 ## M2 — Windows Text Selection PoC
+
+**Status: done.** Capture results are recorded in `docs/capture-compatibility.md`.
 
 **Goal:** Prove that Reminderski can capture the complete selected text from any Windows application that supports the standard Copy command.
 
@@ -61,6 +65,8 @@ No reminder functionality is part of this milestone.
 
 ## M3 — Reminder Creation
 
+**Status: done.** Day names in time expressions are outstanding and are listed under polish.
+
 **Goal:** Turn captured text into a scheduled reminder.
 
 ### Work
@@ -86,6 +92,8 @@ The application survives restart without losing the reminder.
 
 ## M4 — Reminder Scheduling & Notification
 
+**Status: done.** How the notification looks is settled in M5 rather than here.
+
 **Goal:** Deliver a reminder at the requested time.
 
 ### Work
@@ -104,7 +112,30 @@ A user can create a reminder, wait for it, receive it, complete it, or snooze it
 
 ---
 
-## M5 — Local Dashboard
+## M5 — Visual Design
+
+**Goal:** Settle how Reminderski looks, before there is more of it to redo.
+
+The design is agreed as HTML and CSS, which is quicker to look at and argue about than Win32
+code. The application itself stays a native Win32 one; the mock-ups are a drawing board, not a
+component to ship.
+
+### Work
+
+- Agree the look of the reminder input form.
+- Agree the look of the due notification, including the persona.
+- Cover the light and dark system themes.
+- Rebuild the input form to match.
+- Rebuild the notification to match.
+
+### Done when
+
+The human considers the input form and the notification to look the way they should, on the real
+application rather than in the mock-up.
+
+---
+
+## M6 — Local Dashboard
 
 **Goal:** Provide a simple local overview of reminders.
 
@@ -121,7 +152,7 @@ The user can inspect and manage reminders through the local dashboard.
 
 ---
 
-## M6 — MVP Polish
+## M7 — MVP Polish
 
 **Goal:** Make the complete workflow reliable and pleasant enough to call Reminderski an MVP.
 
@@ -130,9 +161,9 @@ The user can inspect and manage reminders through the local dashboard.
 - Fix issues discovered during previous milestones.
 - Raise the already open input form when the shortcut is pressed again, instead of ignoring the press.
 - Understand day names in time expressions, such as `friday` or `next tuesday`.
+- Tell the user which part of the form it could not read, instead of one beep for every reason.
 - Improve startup and interaction speed.
 - Verify persistence and recovery.
-- Polish minimal monochrome UI.
 - Verify keyboard workflow.
 - Remove unnecessary dependencies and complexity.
 - Clean up obvious technical debt.
