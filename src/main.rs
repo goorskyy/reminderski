@@ -15,6 +15,8 @@ const HOTKEY_ID: i32 = 1;
 const VK_R: u32 = 0x52;
 
 fn main() -> io::Result<()> {
+    capture::ignore_self_inflicted_ctrl_c();
+
     // A null window handle posts WM_HOTKEY to this thread's message queue, so no window is
     // needed to receive it.
     if unsafe {

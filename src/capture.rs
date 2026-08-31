@@ -7,17 +7,42 @@
 
 use std::io;
 use std::mem;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
 use std::time::{Duration, Instant};
 
+use windows_sys::Win32::System::Console::{CTRL_C_EVENT, SetConsoleCtrlHandler};
 use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
     GetAsyncKeyState, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBD_EVENT_FLAGS, KEYBDINPUT,
     KEYEVENTF_KEYUP, SendInput, VIRTUAL_KEY, VK_CONTROL, VK_LWIN, VK_MENU, VK_RWIN, VK_SHIFT,
 };
+use windows_sys::core::BOOL;
 
 use crate::clipboard;
 
 const VK_C: VIRTUAL_KEY = 0x43;
+
+/// Set while a synthetic Ctrl+C is on its way to the focused application.
+static COPY_IN_FLIGHT: AtomicBool = AtomicBool::new(false);
+
+/// Stops our own synthetic Ctrl+C from terminating this process.
+///
+/// Ctrl+C typed into a console is not an ordinary keystroke: Windows turns it into a
+/// CTRL_C_EVENT delivered to every process attached to that console. When the user triggers a
+/// capture while the console this application runs in has the focus, that includes us, and the
+/// default handler exits immediately with STATUS_CONTROL_C_EXIT — no window, no message.
+///
+/// Only the interrupt we caused ourselves is swallowed, so Ctrl+C typed by the user still quits.
+pub fn ignore_self_inflicted_ctrl_c() {
+    // Failure only means the interrupt keeps its default handling, which is what we have today.
+    unsafe { SetConsoleCtrlHandler(Some(on_console_ctrl), 1) };
+}
+
+unsafe extern "system" fn on_console_ctrl(event: u32) -> BOOL {
+    let ours = event == CTRL_C_EVENT && COPY_IN_FLIGHT.load(Ordering::SeqCst);
+    // Non-zero means handled; zero passes the event to the default handler, which exits.
+    ours as BOOL
+}
 
 /// How long to wait for the focused application to respond to the synthetic Copy. Applications
 /// answer in a few milliseconds; heavier ones such as Office are slower, and a selection may be
@@ -39,8 +64,10 @@ pub fn capture_selection() -> io::Result<Option<String>> {
     let saved = clipboard::snapshot()?;
     let before = clipboard::sequence_number();
 
+    COPY_IN_FLIGHT.store(true, Ordering::SeqCst);
     send_copy();
     let copied = wait_for_clipboard_change(before);
+    COPY_IN_FLIGHT.store(false, Ordering::SeqCst);
 
     let text = if copied {
         clipboard::read_text()?
