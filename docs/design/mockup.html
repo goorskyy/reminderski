@@ -194,9 +194,34 @@
     background: var(--field);
     display: grid;
     place-items: center;
-    font-size: 28px;
+    white-space: pre;
+    line-height: 1.15;
+    font-size: 14px;
     letter-spacing: 0.04em;
   }
+  .face.compact { font-size: 28px; line-height: 1; }
+
+  /* Page chrome, not part of the design: switches for looking at the alternatives. */
+  .controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .pill {
+    font: inherit;
+    font-size: 10.5px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    padding: 6px 11px;
+    border: 1px solid var(--page-rule);
+    border-radius: 999px;
+    background: transparent;
+    color: var(--page-muted);
+    cursor: pointer;
+  }
+  .pill:hover { color: var(--page-ink); border-color: var(--page-ink); }
+  .pill[aria-pressed="true"] {
+    background: var(--page-ink);
+    border-color: var(--page-ink);
+    color: var(--page-ground);
+  }
+  .pill:focus-visible { outline: 2px solid var(--page-ink); outline-offset: 2px; }
   .message { display: flex; flex-direction: column; gap: 12px; padding-top: 4px; }
   .message p {
     margin: 0;
@@ -315,7 +340,7 @@
         <div class="titlebar"><span>REMINDERSKI !!</span><span class="close">[X]</span></div>
         <div class="body">
           <div class="top">
-            <div class="box face" id="face" aria-label="Reminderski, idling">( ._. )</div>
+            <div class="box face" id="face" role="img" aria-label="Reminderski, idling"></div>
             <div class="message">
               <span class="label">Excuse me... but: (snoozed 2&times;)</span>
               <p>talk to Michal about weird commit validation</p>
@@ -330,6 +355,15 @@
         </div>
       </div>
       <figcaption><b>Due notification</b><span>520 &times; 240</span></figcaption>
+      <div class="controls">
+        <button class="pill" id="persona" type="button" aria-pressed="true">Character</button>
+        <button class="pill" id="persona-compact" type="button" aria-pressed="false">Just a face</button>
+        <span style="width:14px"></span>
+        <button class="pill mood-pick" type="button" data-mood="idle" aria-pressed="true">Idle</button>
+        <button class="pill mood-pick" type="button" data-mood="waiting" aria-pressed="false">Waiting</button>
+        <button class="pill mood-pick" type="button" data-mood="ignored" aria-pressed="false">Ignored</button>
+        <button class="pill mood-pick" type="button" data-mood="done" aria-pressed="false">Done</button>
+      </div>
     </figure>
   </div>
 
@@ -361,16 +395,15 @@
     <div class="note">
       <h2>The character</h2>
       <p class="standfirst" style="font-size:12.5px">
-        It idles and blinks rather than sitting still, and its expression is meant to follow
-        what you have actually been doing &mdash; how long it has been waiting, how many times
-        you have pushed it back.
+        Blinks, glances about, and stares at you once it has been ignored long enough. Use the
+        switches under the notification to compare the full character against the plain face,
+        and to watch each mood.
       </p>
-      <div class="moods">
-        <span class="mood"><b>( ._. )</b>idle</span>
-        <span class="mood"><b>( -_- )</b>waiting</span>
-        <span class="mood"><b>( &gt;_&lt; )</b>snoozed again</span>
-        <span class="mood"><b>( ^_^ )</b>done</span>
-      </div>
+      <ul>
+        <li>Frames are text on a fixed grid, so a mood costs a handful of glyphs to draw.</li>
+        <li>The timer only runs while a notification is open. Nothing animates otherwise.</li>
+        <li>The shortcut path never touches any of this, so it stays instant.</li>
+      </ul>
     </div>
 
     <div class="note">
@@ -386,30 +419,130 @@
 </div>
 
 <script>
-  // The persona idles rather than sitting still: mostly open-eyed, with the occasional blink
-  // and a glance sideways. Every frame is the same width so the box never twitches.
+  // The persona is a frame animation, not a picture. Each mood is a loop of [frame, milliseconds]
+  // pairs; every frame in a set is the same width and height so the box never twitches.
+  //
+  // In the application this timer only runs while a notification is on screen. Nothing animates
+  // when there is nothing to answer, so the idle cost stays where it is today.
   (function () {
     var face = document.getElementById("face");
-    if (!face || window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
-      return;
+    if (!face) return;
+
+    // A body built from one template, so only the eyes and mouth change between frames.
+    function body(eyes, mouth, feet) {
+      return " .-----.\n | " + eyes + " |\n |  " + mouth + "  |\n '-----'\n  " + (feet || "/   \\");
     }
-    var idle = "( ._. )";
-    var script = [
-      [idle, 2600],
-      ["( -_- )", 130],
-      [idle, 260],
-      ["( -_- )", 130],
-      [idle, 3400],
-      ["( ._o )", 700],
-      [idle, 1800],
-      ["( o_. )", 700],
-    ];
+
+    var CHARACTER = {
+      idle: [
+        [body("o o", "-"), 2600],
+        [body("- -", "-"), 130],
+        [body("o o", "-"), 300],
+        [body("- -", "-"), 130],
+        [body("o o", "-"), 2000],
+        [body("oo ", "-"), 900],
+        [body("o o", "-"), 700],
+        [body(" oo", "-"), 900],
+        [body("o o", "-"), 1600],
+      ],
+      waiting: [
+        [body("- -", "."), 1700],
+        [body("o o", "."), 500],
+        [body("- -", "."), 2400],
+        [body("- -", "_"), 900],
+      ],
+      ignored: [
+        [body("O O", "_"), 3800],
+        [body("O O", "_", "/   \\"), 200],
+        [body("o o", "_"), 260],
+        [body("O O", "_"), 3000],
+      ],
+      done: [
+        [body("^ ^", "u"), 900],
+        [body("- -", "u"), 160],
+        [body("^ ^", "u"), 2200],
+        [body("^ ^", "u", "\   /"), 380],
+      ],
+    };
+
+    var COMPACT = {
+      idle: [
+        ["( ._. )", 2600],
+        ["( -_- )", 130],
+        ["( ._. )", 300],
+        ["( -_- )", 130],
+        ["( ._. )", 3000],
+        ["( ._o )", 700],
+        ["( ._. )", 1500],
+        ["( o_. )", 700],
+      ],
+      waiting: [["( -_- )", 2200], ["( ._. )", 600], ["( -_- )", 2600]],
+      ignored: [["( O_O )", 3600], ["( o_o )", 240], ["( O_O )", 2600]],
+      done: [["( ^_^ )", 1600], ["( -_- )", 160], ["( ^_^ )", 2000]],
+    };
+
+    var LABELS = {
+      idle: "Reminderski, idling",
+      waiting: "Reminderski, waiting",
+      ignored: "Reminderski, staring at you",
+      done: "Reminderski, pleased",
+    };
+
+    var still = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    var set = CHARACTER;
+    var mood = "idle";
     var step = 0;
-    (function next() {
-      var frame = script[step % script.length];
-      face.textContent = frame[0];
-      step += 1;
-      setTimeout(next, frame[1]);
-    })();
+    var timer = null;
+
+    function play() {
+      window.clearTimeout(timer);
+      var frames = set[mood];
+      face.textContent = frames[step % frames.length][0];
+      if (still) return;
+      timer = window.setTimeout(function () {
+        step += 1;
+        play();
+      }, frames[step % frames.length][1]);
+    }
+
+    function restart() {
+      step = 0;
+      face.setAttribute("aria-label", LABELS[mood]);
+      play();
+    }
+
+    function press(buttons, active) {
+      buttons.forEach(function (button) {
+        button.setAttribute("aria-pressed", String(button === active));
+      });
+    }
+
+    var character = document.getElementById("persona");
+    var compact = document.getElementById("persona-compact");
+    var personaButtons = [character, compact];
+
+    character.addEventListener("click", function () {
+      set = CHARACTER;
+      face.classList.remove("compact");
+      press(personaButtons, character);
+      restart();
+    });
+    compact.addEventListener("click", function () {
+      set = COMPACT;
+      face.classList.add("compact");
+      press(personaButtons, compact);
+      restart();
+    });
+
+    var moodButtons = Array.prototype.slice.call(document.querySelectorAll(".mood-pick"));
+    moodButtons.forEach(function (button) {
+      button.addEventListener("click", function () {
+        mood = button.getAttribute("data-mood");
+        press(moodButtons, button);
+        restart();
+      });
+    });
+
+    restart();
   })();
 </script>
