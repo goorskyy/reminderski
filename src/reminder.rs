@@ -1,6 +1,15 @@
 //! A reminder, and the Slack-style time expressions that schedule one.
 
+use std::mem;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
+
+use windows_sys::Win32::Foundation::SYSTEMTIME;
+use windows_sys::Win32::System::SystemInformation::GetLocalTime;
+
+/// Where `tomorrow` lands when no clock time is given, matching Slack.
+const DEFAULT_MORNING: u32 = 9 * 3600;
+
+const DAY: u32 = 24 * 3600;
 
 pub struct Reminder {
     /// Seconds since the Unix epoch. Stored as an instant rather than a delay so that a
@@ -19,14 +28,91 @@ impl Reminder {
     }
 }
 
-/// Reads a relative time expression such as `in 40m`, `2h`, `1h30m` or `3 days`.
+/// Reads a time expression and answers how long from now it means.
 ///
-/// The leading `in` is optional, units may repeat, and spaces anywhere are ignored. Returns
-/// `None` for anything else, including absolute times such as `at 15:00`, which this version
-/// does not understand.
+/// Relative: `in 40m`, `2h`, `1h30m`, `3 days`. The leading `in` is optional and units may
+/// repeat.
+///
+/// Absolute: `at 15:00`, `at 3pm`, `at 9`, `tomorrow`, `tomorrow at 9:30`. A clock time that has
+/// already passed today means tomorrow, and a bare `tomorrow` means 09:00.
+///
+/// Absolute times are resolved against the local clock as a plain offset from now, so a
+/// reminder that crosses a daylight-saving change arrives an hour off. Reminders live for hours
+/// rather than months, which makes that rare enough not to carry a time zone library for.
 pub fn parse_when(input: &str) -> Option<Duration> {
+    parse_when_at(input, local_time_of_day())
+}
+
+/// The same, with the current local time of day supplied, which is what the tests exercise.
+fn parse_when_at(input: &str, now: u32) -> Option<Duration> {
     let lowered = input.trim().to_ascii_lowercase();
-    let expression = lowered.strip_prefix("in ").unwrap_or(&lowered).trim_start();
+
+    if let Some(rest) = lowered.strip_prefix("tomorrow") {
+        return Some(delay_until(clock_after_day_word(rest)?, now, true));
+    }
+    if let Some(rest) = lowered.strip_prefix("today") {
+        return Some(delay_until(clock_after_day_word(rest)?, now, false));
+    }
+    if let Some(rest) = lowered.strip_prefix("at ") {
+        return Some(delay_until(parse_clock(rest.trim())?, now, false));
+    }
+    parse_duration(&lowered)
+}
+
+/// How long from `now` until `target`, rolling over to the next day when the time has passed.
+fn delay_until(target: u32, now: u32, next_day: bool) -> Duration {
+    let mut seconds = i64::from(target) - i64::from(now);
+    if next_day || seconds <= 0 {
+        seconds += i64::from(DAY);
+    }
+    Duration::from_secs(seconds as u64)
+}
+
+/// The clock time following `tomorrow` or `today`, which may be absent, bare, or after `at`.
+fn clock_after_day_word(rest: &str) -> Option<u32> {
+    let rest = rest.trim();
+    if rest.is_empty() {
+        return Some(DEFAULT_MORNING);
+    }
+    let clock = rest.strip_prefix("at").unwrap_or(rest).trim();
+    parse_clock(clock)
+}
+
+/// Seconds since midnight for `15:00`, `3pm`, `3:30 pm` or `9`.
+fn parse_clock(text: &str) -> Option<u32> {
+    let (digits, afternoon) = match text.strip_suffix("pm") {
+        Some(rest) => (rest.trim_end(), Some(true)),
+        None => match text.strip_suffix("am") {
+            Some(rest) => (rest.trim_end(), Some(false)),
+            None => (text, None),
+        },
+    };
+
+    let (hours, minutes) = match digits.split_once(':') {
+        Some((hours, minutes)) => (hours.trim(), minutes.trim()),
+        None => (digits.trim(), "0"),
+    };
+    let hour: u32 = hours.parse().ok()?;
+    let minute: u32 = minutes.parse().ok()?;
+    if minute > 59 {
+        return None;
+    }
+
+    let hour = match afternoon {
+        // On a 12 hour clock noon and midnight are both written 12.
+        Some(true) if hour == 12 => 12,
+        Some(true) if hour < 12 => hour + 12,
+        Some(false) if hour == 12 => 0,
+        Some(false) if hour < 12 => hour,
+        None if hour < 24 => hour,
+        _ => return None,
+    };
+    Some(hour * 3600 + minute * 60)
+}
+
+/// Reads one or more `<amount><unit>` groups, such as `40m` or `1h 30m`.
+fn parse_duration(input: &str) -> Option<Duration> {
+    let expression = input.strip_prefix("in ").unwrap_or(input).trim_start();
 
     let bytes = expression.as_bytes();
     let mut position = 0;
@@ -77,12 +163,21 @@ fn unit_seconds(unit: &str) -> Option<u64> {
     })
 }
 
+fn local_time_of_day() -> u32 {
+    let mut now: SYSTEMTIME = unsafe { mem::zeroed() };
+    unsafe { GetLocalTime(&mut now) };
+    u32::from(now.wHour) * 3600 + u32::from(now.wMinute) * 60 + u32::from(now.wSecond)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    /// 10:00 local, the reference "now" for the absolute cases.
+    const TEN: u32 = 10 * 3600;
+
     fn seconds(input: &str) -> Option<u64> {
-        parse_when(input).map(|delay| delay.as_secs())
+        parse_when_at(input, TEN).map(|delay| delay.as_secs())
     }
 
     #[test]
@@ -110,14 +205,51 @@ mod tests {
     }
 
     #[test]
+    fn reads_a_clock_time_later_today() {
+        assert_eq!(seconds("at 15:00"), Some(5 * 3600));
+        assert_eq!(seconds("at 15"), Some(5 * 3600));
+        assert_eq!(seconds("AT 3PM"), Some(5 * 3600));
+        assert_eq!(seconds("at 3:30 pm"), Some(5 * 3600 + 30 * 60));
+    }
+
+    #[test]
+    fn a_clock_time_already_past_means_tomorrow() {
+        assert_eq!(seconds("at 9:00"), Some(23 * 3600));
+        assert_eq!(seconds("at 10:00"), Some(24 * 3600));
+    }
+
+    #[test]
+    fn midnight_and_noon_are_both_written_twelve() {
+        assert_eq!(seconds("at 12am"), Some(14 * 3600));
+        assert_eq!(seconds("at 12pm"), Some(2 * 3600));
+    }
+
+    #[test]
+    fn tomorrow_defaults_to_the_morning() {
+        assert_eq!(seconds("tomorrow"), Some(23 * 3600));
+        assert_eq!(seconds("tomorrow at 9:30"), Some(23 * 3600 + 30 * 60));
+        assert_eq!(seconds("tomorrow 15:00"), Some(29 * 3600));
+    }
+
+    #[test]
+    fn today_stays_on_the_same_day_unless_it_has_passed() {
+        assert_eq!(seconds("today at 15:00"), Some(5 * 3600));
+        assert_eq!(seconds("today at 9:00"), Some(23 * 3600));
+    }
+
+    #[test]
     fn rejects_what_it_cannot_schedule() {
         assert_eq!(seconds(""), None);
         assert_eq!(seconds("in"), None);
         assert_eq!(seconds("40"), None);
         assert_eq!(seconds("in40m"), None);
         assert_eq!(seconds("40x"), None);
-        assert_eq!(seconds("tomorrow"), None);
-        assert_eq!(seconds("at 15:00"), None);
+        assert_eq!(seconds("next tuesday"), None);
+        assert_eq!(seconds("at"), None);
+        assert_eq!(seconds("at 25:00"), None);
+        assert_eq!(seconds("at 12:60"), None);
+        assert_eq!(seconds("at 13pm"), None);
+        assert_eq!(seconds("tomorrowish"), None);
     }
 
     #[test]

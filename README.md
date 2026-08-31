@@ -28,6 +28,14 @@ cargo fmt --check
 cargo clippy --all-targets
 ```
 
+## Time expressions
+
+Relative: `in 40m`, `40m`, `1h30m`, `2 days 3 hours`. The leading `in` is optional.
+
+Absolute: `at 15:00`, `at 3pm`, `at 3:30 pm`, `at 9`, `today at 18:00`, `tomorrow`,
+`tomorrow at 9:30`. A clock time that has already passed means tomorrow, and a bare `tomorrow`
+means 09:00.
+
 ## Data
 
 Reminders are stored in `%APPDATA%\Reminderski\reminders.txt`, one per line.
