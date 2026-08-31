@@ -17,13 +17,12 @@ use std::ptr;
 use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 
-use windows_sys::Win32::Foundation::{COLORREF, HWND, LPARAM, LRESULT, POINT, RECT, WPARAM};
+use windows_sys::Win32::Foundation::{HWND, LPARAM, LRESULT, POINT, RECT, WPARAM};
 use windows_sys::Win32::Graphics::Gdi::{
-    BeginPaint, BitBlt, CreateCompatibleBitmap, CreateCompatibleDC, CreateSolidBrush, DT_CALCRECT,
-    DT_CENTER, DT_LEFT, DT_NOPREFIX, DT_SINGLELINE, DT_TOP, DT_VCENTER, DT_WORDBREAK, DeleteDC,
-    DeleteObject, DrawTextW, EndPaint, FillRect, FrameRect, GetMonitorInfoW, HBRUSH, HDC, HFONT,
-    InvalidateRect, MONITOR_DEFAULTTONEAREST, MONITORINFO, MonitorFromPoint, PAINTSTRUCT, SRCCOPY,
-    SelectObject, SetBkMode, SetTextCharacterExtra, SetTextColor, TRANSPARENT,
+    BeginPaint, BitBlt, CreateCompatibleBitmap, CreateCompatibleDC, DT_CENTER, DT_LEFT,
+    DT_NOPREFIX, DT_SINGLELINE, DT_TOP, DT_VCENTER, DT_WORDBREAK, DeleteDC, DeleteObject, EndPaint,
+    GetMonitorInfoW, HFONT, InvalidateRect, MONITOR_DEFAULTTONEAREST, MONITORINFO,
+    MonitorFromPoint, PAINTSTRUCT, SRCCOPY, SelectObject, SetBkMode, TRANSPARENT,
 };
 use windows_sys::Win32::System::Diagnostics::Debug::MessageBeep;
 use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
@@ -40,7 +39,10 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{
 };
 
 use crate::persona::{self, Mood};
-use crate::ui::{mono_font, scale, wide};
+use crate::ui::{
+    BAR, BAR_INK, HOVER, HOVER_FILLED, INK, LABEL, PAPER, centred_block, contains, draw_text, fill,
+    inset, mono_font, outline, point_of, scale, wide,
+};
 
 const CLASS_NAME: &str = "ReminderskiNotification";
 const TITLE: &str = "REMINDERSKI !!";
@@ -66,19 +68,11 @@ const PERSONA_SIZE: i32 = 19;
 const TITLE_TRACKING: i32 = 3;
 const LABEL_TRACKING: i32 = 2;
 
-const INK: COLORREF = rgb(0x0d, 0x0d, 0x0b);
-const PAPER: COLORREF = rgb(0xff, 0xff, 0xff);
-const LABEL: COLORREF = rgb(0x8b, 0x89, 0x7f);
-const BAR: COLORREF = rgb(0x0a, 0x0a, 0x08);
-const BAR_INK: COLORREF = rgb(0xf2, 0xf1, 0xea);
-const HOVER: COLORREF = rgb(0xf0, 0xef, 0xea);
-const HOVER_FILLED: COLORREF = rgb(0x26, 0x26, 0x1f);
-
 const ANIMATION_TIMER: usize = 1;
 
 /// Sent once after TrackMouseEvent is asked for it. It lives with the common controls rather
 /// than the window messages, which is the only reason it is written out here.
-const WM_MOUSELEAVE: u32 = 0x02a3;
+pub const WM_MOUSELEAVE: u32 = 0x02a3;
 
 /// The buttons, in the order they are drawn from the left. Done is last and is the filled one.
 const ACTIONS: [(&str, &str); 4] = [
@@ -388,14 +382,6 @@ impl Layout {
     }
 }
 
-fn contains(rect: &RECT, point: POINT) -> bool {
-    point.x >= rect.left && point.x < rect.right && point.y >= rect.top && point.y < rect.bottom
-}
-
-const fn rgb(red: u8, green: u8, blue: u8) -> COLORREF {
-    red as u32 | (green as u32) << 8 | (blue as u32) << 16
-}
-
 fn register_class() -> io::Result<()> {
     static REGISTERED: OnceLock<Result<(), i32>> = OnceLock::new();
 
@@ -570,13 +556,6 @@ fn answer(window: HWND, state: &State, index: usize) {
     }
 }
 
-fn point_of(lparam: LPARAM) -> POINT {
-    POINT {
-        x: (lparam & 0xffff) as i16 as i32,
-        y: ((lparam >> 16) & 0xffff) as i16 as i32,
-    }
-}
-
 /// Asks for one WM_MOUSELEAVE, so a button does not stay lit after the pointer goes.
 fn track_mouse(window: HWND, state: &State) {
     const TME_LEAVE: u32 = 2;
@@ -607,11 +586,11 @@ fn paint(window: HWND, state: &State, layout: &Layout) {
     unsafe { SetBkMode(buffer, TRANSPARENT as i32) };
 
     fill(buffer, &client, PAPER);
-    frame(buffer, &client, INK);
+    outline(buffer, &client, INK);
 
     fill(buffer, &layout.titlebar, BAR);
     let title_text = inset(&layout.titlebar, scale(14, state.dpi), 0);
-    text(
+    draw_text(
         buffer,
         &title_text,
         &wide(TITLE),
@@ -621,7 +600,7 @@ fn paint(window: HWND, state: &State, layout: &Layout) {
         state.dpi,
         DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX,
     );
-    text(
+    draw_text(
         buffer,
         &layout.close,
         &wide("[X]"),
@@ -632,7 +611,7 @@ fn paint(window: HWND, state: &State, layout: &Layout) {
         DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX,
     );
 
-    frame(buffer, &layout.face, INK);
+    outline(buffer, &layout.face, INK);
     centred_block(
         buffer,
         &layout.face,
@@ -642,7 +621,7 @@ fn paint(window: HWND, state: &State, layout: &Layout) {
         state.dpi,
     );
 
-    text(
+    draw_text(
         buffer,
         &layout.eyebrow,
         &state.eyebrow,
@@ -652,7 +631,7 @@ fn paint(window: HWND, state: &State, layout: &Layout) {
         state.dpi,
         DT_LEFT | DT_TOP | DT_SINGLELINE | DT_NOPREFIX,
     );
-    text(
+    draw_text(
         buffer,
         &layout.message,
         &state.text,
@@ -676,9 +655,9 @@ fn paint(window: HWND, state: &State, layout: &Layout) {
             fill(buffer, button, background);
         }
         if !filled {
-            frame(buffer, button, INK);
+            outline(buffer, button, INK);
         }
-        text(
+        draw_text(
             buffer,
             button,
             &wide(ACTIONS[index].0),
@@ -706,96 +685,5 @@ fn paint(window: HWND, state: &State, layout: &Layout) {
         DeleteObject(bitmap as _);
         DeleteDC(buffer);
         EndPaint(window, &info);
-    }
-}
-
-fn fill(hdc: HDC, rect: &RECT, color: COLORREF) {
-    with_brush(color, |brush| unsafe {
-        FillRect(hdc, rect, brush);
-    });
-}
-
-/// A one pixel outline, which is the only border this design has.
-fn frame(hdc: HDC, rect: &RECT, color: COLORREF) {
-    with_brush(color, |brush| unsafe {
-        FrameRect(hdc, rect, brush);
-    });
-}
-
-fn with_brush(color: COLORREF, draw: impl FnOnce(HBRUSH)) {
-    let brush = unsafe { CreateSolidBrush(color) };
-    if brush.is_null() {
-        return;
-    }
-    draw(brush);
-    unsafe { DeleteObject(brush as _) };
-}
-
-#[allow(clippy::too_many_arguments)]
-fn text(
-    hdc: HDC,
-    rect: &RECT,
-    content: &[u16],
-    font: HFONT,
-    color: COLORREF,
-    tracking: i32,
-    dpi: u32,
-    flags: u32,
-) {
-    let previous = unsafe { SelectObject(hdc, font as _) };
-    unsafe {
-        SetTextColor(hdc, color);
-        // Letter spacing is what makes the uppercase runs read as labels rather than shouting.
-        SetTextCharacterExtra(hdc, scale(tracking, dpi));
-    }
-
-    let mut area = *rect;
-    unsafe { DrawTextW(hdc, content.as_ptr(), -1, &mut area, flags) };
-
-    unsafe {
-        SetTextCharacterExtra(hdc, 0);
-        SelectObject(hdc, previous);
-    }
-}
-
-/// Draws several lines centred in a box. DT_VCENTER only works on one line, so the block is
-/// measured first and its top edge moved down by half of what is left over.
-fn centred_block(hdc: HDC, rect: &RECT, content: &[u16], font: HFONT, color: COLORREF, dpi: u32) {
-    let previous = unsafe { SelectObject(hdc, font as _) };
-    let mut measured = *rect;
-    unsafe {
-        DrawTextW(
-            hdc,
-            content.as_ptr(),
-            -1,
-            &mut measured,
-            DT_CENTER | DT_NOPREFIX | DT_CALCRECT,
-        );
-        SelectObject(hdc, previous);
-    }
-
-    let slack = (rect.bottom - rect.top) - (measured.bottom - measured.top);
-    let area = RECT {
-        top: rect.top + slack.max(0) / 2,
-        ..*rect
-    };
-    text(
-        hdc,
-        &area,
-        content,
-        font,
-        color,
-        0,
-        dpi,
-        DT_CENTER | DT_NOPREFIX,
-    );
-}
-
-fn inset(rect: &RECT, horizontal: i32, vertical: i32) -> RECT {
-    RECT {
-        left: rect.left + horizontal,
-        top: rect.top + vertical,
-        right: rect.right - horizontal,
-        bottom: rect.bottom - vertical,
     }
 }
