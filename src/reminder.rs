@@ -22,6 +22,8 @@ pub struct Reminder {
     /// reminder written before a restart still comes due at the time the user asked for.
     pub due_unix: u64,
     pub state: State,
+    /// How many times it has been pushed back. The character has opinions about this.
+    pub snoozes: u32,
     pub text: String,
 }
 
@@ -30,6 +32,7 @@ impl Reminder {
         Self {
             due_unix: now_unix() + delay.as_secs(),
             state: State::Pending,
+            snoozes: 0,
             text,
         }
     }

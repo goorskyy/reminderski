@@ -28,14 +28,26 @@ pub fn ui_font(dpi: u32) -> HFONT {
     }
 }
 
-/// The same size and weight as the UI font, in a fixed-pitch face.
-pub fn monospace_font(dpi: u32) -> HFONT {
-    let Some(mut logical) = message_font(dpi) else {
-        return ptr::null_mut();
-    };
+/// A fixed-pitch font of a given height in logical pixels, scaled to the monitor.
+///
+/// The design is monospace throughout, so the windows ask for a size rather than inheriting
+/// whatever the system has been set to.
+pub fn mono_font(dpi: u32, height: i32, bold: bool) -> HFONT {
+    // The fields below are single bytes in LOGFONTW, and naming the values here keeps the
+    // widths from having to be juggled at each call.
+    const DEFAULT_CHARSET: u8 = 1;
+    const CLEARTYPE_QUALITY: u8 = 5;
+    const FIXED_PITCH_MODERN: u8 = 1 | 48;
+
+    let mut logical: LOGFONTW = unsafe { mem::zeroed() };
+    // Negative asks for the character height rather than the cell height.
+    logical.lfHeight = -scale(height, dpi);
+    logical.lfWeight = if bold { 700 } else { 400 };
+    logical.lfCharSet = DEFAULT_CHARSET;
+    logical.lfQuality = CLEARTYPE_QUALITY;
+    logical.lfPitchAndFamily = FIXED_PITCH_MODERN;
 
     let face = wide(MONOSPACE_FACE);
-    logical.lfFaceName = [0; 32];
     logical.lfFaceName[..face.len()].copy_from_slice(&face);
     unsafe { CreateFontIndirectW(&logical) }
 }

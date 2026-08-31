@@ -1,6 +1,6 @@
 //! The reminder file, kept under the user's roaming profile.
 //!
-//! One reminder per line, `<due>\t<state>\t<text>`, with the text escaped so that a multiline
+//! One reminder per line, `<due>\t<state>\t<snoozes>\t<text>`, with the text escaped so a multiline
 //! reminder still occupies a single line. The whole file is rewritten on every change, which is
 //! honest at this size and keeps one code path instead of two; the replacement goes through a
 //! temporary file so an interrupted write cannot leave a half-written store behind.
@@ -101,6 +101,8 @@ fn encode(reminder: &Reminder) -> String {
     line.push('\t');
     line.push_str(state_word(reminder.state));
     line.push('\t');
+    line.push_str(&reminder.snoozes.to_string());
+    line.push('\t');
     for character in reminder.text.chars() {
         match character {
             '\\' => line.push_str("\\\\"),
@@ -114,17 +116,16 @@ fn encode(reminder: &Reminder) -> String {
 }
 
 fn decode(line: &str) -> Option<Reminder> {
-    let (due, rest) = line.split_once('\t')?;
-    let due_unix = due.parse().ok()?;
-
-    // Reminders written before states existed have no state column and are all pending.
-    let (state, escaped) = match rest.split_once('\t') {
-        Some((word, remainder)) => match parse_state(word) {
-            Some(state) => (state, remainder),
-            None => (State::Pending, rest),
-        },
-        None => (State::Pending, rest),
+    // A tab inside the text is escaped, so splitting on tabs cannot cut a reminder in half and
+    // the number of columns says which version wrote the line.
+    let columns: Vec<&str> = line.split('\t').collect();
+    let (due, state, snoozes, escaped) = match columns[..] {
+        [due, text] => (due, State::Pending, 0, text),
+        [due, state, text] => (due, parse_state(state)?, 0, text),
+        [due, state, snoozes, text] => (due, parse_state(state)?, snoozes.parse().ok()?, text),
+        _ => return None,
     };
+    let due_unix = due.parse().ok()?;
 
     let mut text = String::with_capacity(escaped.len());
     let mut characters = escaped.chars();
@@ -144,6 +145,7 @@ fn decode(line: &str) -> Option<Reminder> {
     Some(Reminder {
         due_unix,
         state,
+        snoozes,
         text,
     })
 }
@@ -183,6 +185,7 @@ mod tests {
         Reminder {
             due_unix,
             state,
+            snoozes: 0,
             text: text.to_string(),
         }
     }
@@ -265,6 +268,28 @@ mod tests {
     }
 
     #[test]
+    fn remembers_how_many_times_a_reminder_was_pushed_back() {
+        let mut pushed = reminder(1, State::Pending, "again");
+        pushed.snoozes = 3;
+
+        let loaded = round_trip(vec![pushed]);
+        assert_eq!(loaded[0].snoozes, 3);
+    }
+
+    #[test]
+    fn reads_reminders_written_before_snoozes_were_counted() {
+        let path = temporary_path();
+        fs::write(&path, "1800000000\tpending\tbuy milk\n").unwrap();
+
+        let store = Store::open(path.clone()).unwrap();
+        assert_eq!(store.reminders.len(), 1);
+        assert_eq!(store.reminders[0].text, "buy milk");
+        assert_eq!(store.reminders[0].snoozes, 0);
+
+        fs::remove_file(&path).unwrap();
+    }
+
+    #[test]
     fn a_missing_file_holds_no_reminders() {
         assert!(Store::open(temporary_path()).unwrap().reminders.is_empty());
     }
@@ -272,7 +297,13 @@ mod tests {
     #[test]
     fn saving_does_not_destroy_a_line_it_could_not_read() {
         let path = temporary_path();
-        fs::write(&path, "not a reminder\n1800000000\tpending\tkept\n").unwrap();
+        fs::write(
+            &path,
+            "not a reminder
+1800000000	pending	0	kept
+",
+        )
+        .unwrap();
 
         let mut store = Store::open(path.clone()).unwrap();
         assert_eq!(store.reminders.len(), 1);
@@ -283,7 +314,7 @@ mod tests {
 
         let written = fs::read_to_string(&path).unwrap();
         assert!(written.contains("not a reminder"));
-        assert!(written.contains("done\tkept"));
+        assert!(written.contains("done	0	kept"));
 
         fs::remove_file(&path).unwrap();
     }

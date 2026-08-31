@@ -2,6 +2,7 @@ mod capture;
 mod clipboard;
 mod form;
 mod notify;
+mod persona;
 mod reminder;
 mod store;
 mod ui;
@@ -33,9 +34,6 @@ const INFINITE: u32 = u32::MAX;
 /// within a minute of waking rather than at the moment the wait was originally set to end. It
 /// also covers the user moving the system clock.
 const LONGEST_WAIT: u32 = 60_000;
-
-/// How far a snoozed reminder is pushed back. Configurable durations are future work.
-const SNOOZE_SECONDS: u64 = 10 * 60;
 
 struct App {
     store: Store,
@@ -167,7 +165,8 @@ impl App {
         for index in due {
             let slot = self.free_slot();
             let text = self.store.reminders[index].text.clone();
-            match Notification::show(&text, index, slot) {
+            let snoozes = self.store.reminders[index].snoozes;
+            match Notification::show(&text, snoozes, index, slot) {
                 Ok(notification) => self.showing.push(notification),
                 // Without a window there is no way to tell the user, and re-trying every second
                 // would be worse than saying so once and leaving the reminder pending.
@@ -189,7 +188,10 @@ impl App {
             let reminder = &mut self.store.reminders[notification.reminder];
             match notification.outcome() {
                 Outcome::Done => reminder.state = State::Done,
-                Outcome::Snoozed => reminder.due_unix = reminder::now_unix() + SNOOZE_SECONDS,
+                Outcome::Later(delay) => {
+                    reminder.due_unix = reminder::now_unix() + delay.as_secs();
+                    reminder.snoozes += 1;
+                }
             }
             answered = true;
         }
