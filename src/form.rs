@@ -53,26 +53,28 @@ const ID_TEXT: i32 = 1;
 const ID_WHEN: i32 = 2;
 
 /// Logical pixels at 96 DPI.
-const WIDTH: i32 = 620;
+const WIDTH: i32 = 540;
 const TITLEBAR: i32 = 34;
-const PADDING: i32 = 30;
+const PADDING: i32 = 24;
 const LABEL_GAP: i32 = 10;
-const GROUP_GAP: i32 = 26;
-const TEXT_HEIGHT: i32 = 96;
-const ROW_HEIGHT: i32 = 48;
-const QUICK_HEIGHT: i32 = 46;
-const QUICK_GAP: i32 = 14;
-const SET_WIDTH: i32 = 104;
-const CANCEL_WIDTH: i32 = 150;
-const CANCEL_HEIGHT: i32 = 44;
-const HINT_HEIGHT: i32 = 18;
-const EDIT_INSET: i32 = 12;
+const GROUP_GAP: i32 = 20;
+const TEXT_HEIGHT: i32 = 76;
+const ROW_HEIGHT: i32 = 40;
+const QUICK_HEIGHT: i32 = 38;
+const QUICK_GAP: i32 = 12;
+const SET_WIDTH: i32 = 88;
+const CANCEL_WIDTH: i32 = 118;
+const CANCEL_HEIGHT: i32 = 38;
+const HINT_HEIGHT: i32 = 17;
+const EDIT_INSET: i32 = 10;
 
 /// Type sizes, also in logical pixels.
 const TITLE_SIZE: i32 = 13;
-const LABEL_SIZE: i32 = 11;
-const FIELD_SIZE: i32 = 15;
-const BUTTON_SIZE: i32 = 13;
+const LABEL_SIZE: i32 = 13;
+const FIELD_SIZE: i32 = 14;
+const BUTTON_SIZE: i32 = 12;
+/// The examples under the time field sit below the labels rather than beside them.
+const HINT_SIZE: i32 = 11;
 
 const TITLE_TRACKING: i32 = 3;
 const LABEL_TRACKING: i32 = 2;
@@ -122,6 +124,7 @@ struct Fonts {
     label: HFONT,
     field: HFONT,
     button: HFONT,
+    hint: HFONT,
 }
 
 /// Where everything sits inside the client area, in device pixels.
@@ -179,11 +182,12 @@ fn run_modal_loop(form: &Form) -> Option<Entry> {
             return entered;
         }
 
-        // A button was clicked on the previous turn through the loop.
+        // A button was clicked on the previous turn through the loop. When it did not close the
+        // form the message still has to be dispatched, so only a close skips the rest.
         if let Some(button) = form.state.chosen.take()
-            && let Some(entry) = form.settle(button, &mut entered)
+            && form.settle(button, &mut entered)
         {
-            return entry;
+            continue;
         }
 
         if message.message == WM_KEYDOWN {
@@ -204,9 +208,7 @@ fn run_modal_loop(form: &Form) -> Option<Entry> {
                 // Enter accepts from the time field, where it has nothing else to do.
                 // Ctrl+Enter accepts from either, so the reminder text never traps the user.
                 VK_RETURN if focused(form.when) || control_is_down() => {
-                    if let Some(entry) = form.settle(SET, &mut entered) {
-                        return entry;
-                    }
+                    form.settle(SET, &mut entered);
                     continue;
                 }
                 _ => {}
@@ -224,23 +226,26 @@ fn run_modal_loop(form: &Form) -> Option<Entry> {
 }
 
 impl Form {
-    /// Acts on a button. Returns the loop's answer once the form is finished with, and `None`
-    /// while it should stay open.
-    fn settle(&self, button: usize, entered: &mut Option<Entry>) -> Option<Option<Entry>> {
+    /// Acts on a button. Returns true when the form is closing.
+    ///
+    /// Closing does not return from the message loop. Destroying the window posts a quit
+    /// message, and that message has to be taken out of the queue here: the application's own
+    /// loop would read it as a reason to shut down, and the reminder just set would never be
+    /// delivered.
+    fn settle(&self, button: usize, entered: &mut Option<Entry>) -> bool {
         match self.answer(button) {
             Answer::Accepted(entry) => {
                 *entered = Some(entry);
                 unsafe { DestroyWindow(self.window) };
-                // The window is gone, so the fields are too. Nothing is left to pump.
-                Some(entered.take())
+                true
             }
             Answer::Cancelled => {
                 unsafe { DestroyWindow(self.window) };
-                Some(None)
+                true
             }
             Answer::Rejected => {
                 self.reject();
-                None
+                false
             }
         }
     }
@@ -383,11 +388,12 @@ impl Fonts {
             label: mono_font(dpi, LABEL_SIZE, false),
             field: mono_font(dpi, FIELD_SIZE, false),
             button: mono_font(dpi, BUTTON_SIZE, false),
+            hint: mono_font(dpi, HINT_SIZE, false),
         }
     }
 
     fn delete(&self) {
-        for font in [self.title, self.label, self.field, self.button] {
+        for font in [self.title, self.label, self.field, self.button, self.hint] {
             if !font.is_null() {
                 unsafe { DeleteObject(font as _) };
             }
@@ -743,7 +749,7 @@ fn paint(window: HWND, state: &State, layout: &Layout) {
         buffer,
         &layout.hint,
         &wide(HINT),
-        state.fonts.label,
+        state.fonts.hint,
         LABEL,
         0,
         state.dpi,
