@@ -1,0 +1,360 @@
+<title>Reminderski Mockups</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&display=swap">
+<style>
+  /* Page surround: follows the viewer's theme. The window replicas below do not — their
+     palette is the design being specified, and it is the same in every theme. */
+  :root {
+    --page-ground: #e6e5e0;
+    --page-ink: #16150f;
+    --page-muted: #6f6d63;
+    --page-rule: #c9c7bd;
+    --page-panel: #f4f3ef;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --page-ground: #16150f;
+      --page-ink: #edece5;
+      --page-muted: #918e83;
+      --page-rule: #34322a;
+      --page-panel: #1e1d16;
+    }
+  }
+  :root[data-theme="dark"] {
+    --page-ground: #16150f;
+    --page-ink: #edece5;
+    --page-muted: #918e83;
+    --page-rule: #34322a;
+    --page-panel: #1e1d16;
+  }
+
+  /* The application's own palette, read off the photographs. */
+  :root {
+    --ink: #0d0d0b;
+    --paper: #eceae4;
+    --field: #fbfaf7;
+    --hairline: #14140f;
+    --label: #8b897f;
+    --bar: #0a0a08;
+    --bar-ink: #f2f1ea;
+    --edge: #c6c4ba;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--page-ground);
+    color: var(--page-ink);
+    font-family: Consolas, "JetBrains Mono", ui-monospace, "DejaVu Sans Mono", monospace;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .sheet {
+    max-width: 1180px;
+    margin: 0 auto;
+    padding: 40px 24px 72px;
+    display: flex;
+    flex-direction: column;
+    gap: 40px;
+  }
+
+  header { display: flex; flex-direction: column; gap: 10px; }
+  h1 {
+    margin: 0;
+    font-size: 19px;
+    font-weight: 700;
+    letter-spacing: 0.24em;
+    text-transform: uppercase;
+    text-wrap: balance;
+  }
+  .standfirst {
+    margin: 0;
+    max-width: 62ch;
+    font-size: 13px;
+    line-height: 1.7;
+    color: var(--page-muted);
+  }
+
+  .specimens {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 40px;
+    align-items: flex-start;
+  }
+  figure { margin: 0; display: flex; flex-direction: column; gap: 12px; }
+  figcaption {
+    font-size: 11px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--page-muted);
+    display: flex;
+    gap: 12px;
+  }
+  figcaption b { font-weight: 500; color: var(--page-ink); }
+
+  /* ---- the windows ---- */
+
+  .window {
+    background: var(--paper);
+    border: 1px solid var(--edge);
+    color: var(--ink);
+    font-size: 14px;
+  }
+
+  .titlebar {
+    height: 34px;
+    background: var(--bar);
+    color: var(--bar-ink);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 14px;
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 0.22em;
+  }
+  .titlebar .close { letter-spacing: 0.06em; }
+
+  .label {
+    font-size: 11px;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: var(--label);
+  }
+
+  /* Every control is a hairline box on paper; exactly one per window is filled. */
+  .box {
+    background: transparent;
+    border: 1px solid var(--hairline);
+    color: inherit;
+    font: inherit;
+    border-radius: 0;
+  }
+  .box:focus-visible { outline: 2px solid var(--hairline); outline-offset: 2px; }
+
+  .field { background: var(--field); padding: 12px 14px; width: 100%; }
+  textarea.field { resize: none; line-height: 1.55; }
+
+  .action {
+    height: 46px;
+    padding: 0 18px;
+    font-size: 13px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .action:hover { background: rgba(20, 20, 15, 0.06); }
+  .action.filled {
+    background: var(--ink);
+    color: var(--paper);
+    font-weight: 700;
+  }
+  .action.filled:hover { background: #26261f; }
+
+  /* ---- form ---- */
+
+  .form { width: 620px; }
+  .form .body {
+    padding: 28px 30px 26px;
+    display: flex;
+    flex-direction: column;
+    gap: 26px;
+  }
+  .group { display: flex; flex-direction: column; gap: 10px; }
+  .quick { display: flex; gap: 14px; }
+  .quick .action { flex: 1; }
+  .timerow { display: flex; gap: 14px; align-items: center; }
+  .timerow .field { height: 48px; padding-top: 0; padding-bottom: 0; }
+  .timerow .action { height: 60px; width: 104px; justify-content: center; }
+  .hint {
+    font-size: 12px;
+    letter-spacing: 0.04em;
+    color: var(--label);
+  }
+  .footer { display: flex; justify-content: flex-end; }
+  .footer .action { width: 150px; }
+
+  /* ---- notification ---- */
+
+  .toast { width: 520px; }
+  .toast .body {
+    padding: 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+  .toast .top { display: flex; gap: 18px; }
+  .face {
+    width: 140px;
+    height: 140px;
+    flex: none;
+    background: var(--field);
+    display: grid;
+    place-items: center;
+    font-size: 28px;
+    letter-spacing: 0.04em;
+  }
+  .message { display: flex; flex-direction: column; gap: 12px; padding-top: 4px; }
+  .message p {
+    margin: 0;
+    font-size: 17px;
+    line-height: 1.5;
+    text-wrap: balance;
+  }
+  .snoozes { display: flex; gap: 10px; }
+  .snoozes .action { flex: 1; height: 44px; padding: 0 6px; font-size: 12px; letter-spacing: 0.1em; }
+  .snoozes .action.filled { flex: 0 0 118px; }
+
+  /* ---- notes ---- */
+
+  .notes {
+    border-top: 1px solid var(--page-rule);
+    padding-top: 28px;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: 28px;
+  }
+  .note { display: flex; flex-direction: column; gap: 10px; }
+  .note h2 {
+    margin: 0;
+    font-size: 11px;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: var(--page-muted);
+    font-weight: 500;
+  }
+  .note ul { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 7px; }
+  .note li { font-size: 12.5px; line-height: 1.6; }
+  .note li b { font-weight: 700; }
+
+  .swatches { display: flex; flex-wrap: wrap; gap: 8px; }
+  .swatch {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    font-size: 11px;
+    color: var(--page-muted);
+    font-variant-numeric: tabular-nums;
+  }
+  .chip {
+    width: 15px;
+    height: 15px;
+    border: 1px solid var(--page-rule);
+  }
+
+  @media (max-width: 700px) {
+    .sheet { padding: 24px 14px 48px; }
+    .form, .toast { width: 100%; min-width: 0; }
+    .quick, .snoozes { flex-wrap: wrap; }
+  }
+</style>
+
+<div class="sheet">
+  <header>
+    <h1>Reminderski &mdash; window design</h1>
+    <p class="standfirst">
+      Both windows drawn from the photographs of the .NET original, at one to one. Monospace
+      throughout, hairline borders, uppercase labels in grey, and exactly one filled black
+      control per window for the action you actually want.
+    </p>
+  </header>
+
+  <div class="specimens">
+    <figure>
+      <div class="window form">
+        <div class="titlebar"><span>REMINDERSKI</span><span class="close">[X]</span></div>
+        <div class="body">
+          <div class="group">
+            <span class="label">Remind me about</span>
+            <textarea class="box field" rows="3" spellcheck="false">Remove hardcoded -b build.gradle from the Gradle build step</textarea>
+          </div>
+
+          <div class="group">
+            <span class="label">When?</span>
+            <div class="quick">
+              <button class="box action" type="button">10 min</button>
+              <button class="box action" type="button">1 hour</button>
+              <button class="box action" type="button">Tomorrow 9am</button>
+            </div>
+          </div>
+
+          <div class="group">
+            <span class="label">Or type a time</span>
+            <div class="timerow">
+              <input class="box field" type="text" value="" spellcheck="false" aria-label="Time">
+              <button class="box action filled" type="button">Set</button>
+            </div>
+            <span class="hint">e.g. &ldquo;in 45m&rdquo;&nbsp;&nbsp; &ldquo;at 12&rdquo;&nbsp;&nbsp; &ldquo;tomorrow 9&rdquo;&nbsp;&nbsp; &ldquo;monday 14&rdquo;</span>
+          </div>
+
+          <div class="footer">
+            <button class="box action" type="button">Cancel</button>
+          </div>
+        </div>
+      </div>
+      <figcaption><b>Input form</b><span>620 &times; 470</span></figcaption>
+    </figure>
+
+    <figure>
+      <div class="window toast">
+        <div class="titlebar"><span>REMINDERSKI !!</span><span class="close">[X]</span></div>
+        <div class="body">
+          <div class="top">
+            <div class="box face">( ._. )</div>
+            <div class="message">
+              <span class="label">Excuse me... but: (snoozed 2&times;)</span>
+              <p>talk to Michal about weird commit validation</p>
+            </div>
+          </div>
+          <div class="snoozes">
+            <button class="box action" type="button">+30 min</button>
+            <button class="box action" type="button">+2 hrs</button>
+            <button class="box action" type="button">Tomorrow</button>
+            <button class="box action" type="button">Next week</button>
+            <button class="box action filled" type="button">Done &#10003;</button>
+          </div>
+        </div>
+      </div>
+      <figcaption><b>Due notification</b><span>520 &times; 260</span></figcaption>
+    </figure>
+  </div>
+
+  <div class="notes">
+    <div class="note">
+      <h2>Palette</h2>
+      <div class="swatches">
+        <span class="swatch"><span class="chip" style="background:#0d0d0b"></span>#0D0D0B ink</span>
+        <span class="swatch"><span class="chip" style="background:#eceae4"></span>#ECEAE4 paper</span>
+        <span class="swatch"><span class="chip" style="background:#fbfaf7"></span>#FBFAF7 field</span>
+        <span class="swatch"><span class="chip" style="background:#8b897f"></span>#8B897F label</span>
+        <span class="swatch"><span class="chip" style="background:#0a0a08"></span>#0A0A08 bar</span>
+      </div>
+      <ul>
+        <li>Borders are 1px, square, the same ink as the text.</li>
+        <li>Nothing is rounded, shadowed or gradient.</li>
+      </ul>
+    </div>
+
+    <div class="note">
+      <h2>What this changes</h2>
+      <ul>
+        <li>The title bar is <b>ours</b>, not Windows'. Dragging, closing and the shadow become our job.</li>
+        <li>Buttons stop being system buttons and get drawn by hand.</li>
+        <li>The window no longer follows the Windows light or dark theme &mdash; it is always paper.</li>
+      </ul>
+    </div>
+
+    <div class="note">
+      <h2>Open questions</h2>
+      <ul>
+        <li>The original counts snoozes (<b>snoozed 2&times;</b>). Worth keeping?</li>
+        <li>Four snooze buttons here against one today. Are these the right four?</li>
+        <li>Does the persona change, or is <b>( ._. )</b> the one face?</li>
+        <li>Quick picks on the form: are <b>10 min / 1 hour / tomorrow 9am</b> your real three?</li>
+      </ul>
+    </div>
+  </div>
+</div>
