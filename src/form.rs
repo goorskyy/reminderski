@@ -5,7 +5,6 @@
 //! Windows application rather than a drawn imitation.
 
 use std::io;
-use std::iter::once;
 use std::mem;
 use std::ptr;
 use std::sync::OnceLock;
@@ -13,12 +12,11 @@ use std::time::Duration;
 
 use windows_sys::Win32::Foundation::{HWND, LPARAM, LRESULT, POINT, RECT, WPARAM};
 use windows_sys::Win32::Graphics::Gdi::{
-    CreateFontIndirectW, DeleteObject, GetMonitorInfoW, HFONT, MONITOR_DEFAULTTONEAREST,
-    MONITORINFO, MonitorFromPoint,
+    DeleteObject, GetMonitorInfoW, HFONT, MONITOR_DEFAULTTONEAREST, MONITORINFO, MonitorFromPoint,
 };
 use windows_sys::Win32::System::Diagnostics::Debug::MessageBeep;
 use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
-use windows_sys::Win32::UI::HiDpi::{GetDpiForWindow, SystemParametersInfoForDpi};
+use windows_sys::Win32::UI::HiDpi::GetDpiForWindow;
 use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
     GetAsyncKeyState, GetFocus, SetFocus, VK_CONTROL, VK_ESCAPE, VK_RETURN, VK_TAB,
 };
@@ -26,13 +24,14 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{
     CW_USEDEFAULT, CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW,
     ES_AUTOHSCROLL, ES_AUTOVSCROLL, ES_MULTILINE, ES_WANTRETURN, GetClientRect, GetCursorPos,
     GetDlgItem, GetMessageW, GetWindowTextLengthW, GetWindowTextW, IDC_ARROW, LoadCursorW,
-    MB_ICONERROR, MSG, MoveWindow, NONCLIENTMETRICSW, PostQuitMessage, RegisterClassW,
-    SPI_GETNONCLIENTMETRICS, SW_SHOW, SendMessageW, SetForegroundWindow, SetWindowPos,
-    SetWindowTextW, ShowWindow, TranslateMessage, WM_DESTROY, WM_KEYDOWN, WM_SETFONT, WM_SIZE,
-    WNDCLASSW, WS_CAPTION, WS_CHILD, WS_OVERLAPPED, WS_SYSMENU, WS_VISIBLE, WS_VSCROLL,
+    MB_ICONERROR, MSG, MoveWindow, PostQuitMessage, RegisterClassW, SW_SHOW, SendMessageW,
+    SetForegroundWindow, SetWindowPos, SetWindowTextW, ShowWindow, TranslateMessage, WM_DESTROY,
+    WM_KEYDOWN, WM_SETFONT, WM_SIZE, WNDCLASSW, WS_CAPTION, WS_CHILD, WS_OVERLAPPED, WS_SYSMENU,
+    WS_VISIBLE, WS_VSCROLL,
 };
 
 use crate::reminder;
+use crate::ui::{scale, ui_font, wide};
 
 const CLASS_NAME: &str = "ReminderskiForm";
 const WINDOW_TITLE: &str = "Reminderski";
@@ -204,7 +203,7 @@ impl Form {
 
         // Only now that there is a window is its monitor, and therefore its DPI, known.
         let dpi = unsafe { GetDpiForWindow(window) };
-        let font = create_ui_font(dpi);
+        let font = ui_font(dpi);
         if !font.is_null() {
             unsafe {
                 SendMessageW(text, WM_SETFONT, font as WPARAM, 1);
@@ -323,28 +322,6 @@ unsafe fn layout(window: HWND) {
     }
 }
 
-/// Creates the font Windows uses for UI text, at the given DPI. Null when it cannot be read,
-/// in which case the controls keep the default font rather than failing the capture.
-fn create_ui_font(dpi: u32) -> HFONT {
-    let mut metrics = NONCLIENTMETRICSW {
-        cbSize: mem::size_of::<NONCLIENTMETRICSW>() as u32,
-        ..unsafe { mem::zeroed() }
-    };
-    let read = unsafe {
-        SystemParametersInfoForDpi(
-            SPI_GETNONCLIENTMETRICS,
-            metrics.cbSize,
-            ptr::from_mut(&mut metrics).cast(),
-            0,
-            dpi,
-        )
-    };
-    if read == 0 {
-        return ptr::null_mut();
-    }
-    unsafe { CreateFontIndirectW(&metrics.lfMessageFont) }
-}
-
 /// Centres the form on whichever monitor the mouse is on, which is where the user is working.
 fn center_on_active_monitor(window: HWND, dpi: u32) {
     let width = scale(WINDOW_WIDTH, dpi);
@@ -374,10 +351,6 @@ fn center_on_active_monitor(window: HWND, dpi: u32) {
     unsafe { SetWindowPos(window, ptr::null_mut(), left, top, width, height, 0) };
 }
 
-fn scale(logical: i32, dpi: u32) -> i32 {
-    logical * dpi as i32 / 96
-}
-
 fn focused(control: HWND) -> bool {
     unsafe { GetFocus() == control }
 }
@@ -394,8 +367,4 @@ fn read_text(edit: HWND) -> String {
     let mut buffer = vec![0u16; length as usize + 1];
     let copied = unsafe { GetWindowTextW(edit, buffer.as_mut_ptr(), buffer.len() as i32) };
     String::from_utf16_lossy(&buffer[..copied as usize])
-}
-
-fn wide(text: &str) -> Vec<u16> {
-    text.encode_utf16().chain(once(0)).collect()
 }

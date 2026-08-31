@@ -1,8 +1,10 @@
 mod capture;
 mod clipboard;
 mod form;
+mod notify;
 mod reminder;
 mod store;
+mod ui;
 
 use std::io;
 use std::mem;
@@ -12,10 +14,11 @@ use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
     MOD_ALT, MOD_CONTROL, MOD_NOREPEAT, RegisterHotKey, UnregisterHotKey,
 };
 use windows_sys::Win32::UI::WindowsAndMessaging::{
-    MSG, MWMO_INPUTAVAILABLE, MsgWaitForMultipleObjectsEx, PM_REMOVE, PeekMessageW, QS_ALLINPUT,
-    WM_HOTKEY, WM_QUIT,
+    DispatchMessageW, IsDialogMessageW, MSG, MWMO_INPUTAVAILABLE, MsgWaitForMultipleObjectsEx,
+    PM_REMOVE, PeekMessageW, QS_ALLINPUT, TranslateMessage, WM_HOTKEY, WM_QUIT,
 };
 
+use crate::notify::{Notification, Outcome};
 use crate::reminder::{Reminder, State};
 use crate::store::Store;
 
@@ -31,10 +34,21 @@ const INFINITE: u32 = u32::MAX;
 /// also covers the user moving the system clock.
 const LONGEST_WAIT: u32 = 60_000;
 
+/// How far a snoozed reminder is pushed back. Configurable durations are future work.
+const SNOOZE_SECONDS: u64 = 10 * 60;
+
+struct App {
+    store: Store,
+    showing: Vec<Notification>,
+}
+
 fn main() -> io::Result<()> {
     capture::ignore_self_inflicted_ctrl_c();
 
-    let mut store = Store::open(store::default_path()?)?;
+    let mut app = App {
+        store: Store::open(store::default_path()?)?,
+        showing: Vec::new(),
+    };
 
     // A null window handle posts WM_HOTKEY to this thread's message queue, so no window is
     // needed to receive it.
@@ -53,114 +67,170 @@ fn main() -> io::Result<()> {
     println!("Reminderski: press Ctrl+Alt+R to capture the selected text. Ctrl+C here to quit.");
     println!(
         "{} reminder(s) waiting in {}",
-        store.pending(),
-        store.path().display()
+        app.store.pending(),
+        app.store.path().display()
     );
-    run_message_loop(&mut store);
+    app.run();
 
     unsafe { UnregisterHotKey(ptr::null_mut(), HOTKEY_ID) };
     Ok(())
 }
 
-/// Waits for either a message or the next reminder falling due, whichever comes first.
-fn run_message_loop(store: &mut Store) {
-    loop {
-        // MWMO_INPUTAVAILABLE is what stops a message that arrived between the drain below and
-        // this wait from being slept through.
-        unsafe {
-            MsgWaitForMultipleObjectsEx(
-                0,
-                ptr::null(),
-                wait_milliseconds(&store.reminders),
-                QS_ALLINPUT,
-                MWMO_INPUTAVAILABLE,
-            )
-        };
+impl App {
+    /// Waits for either a message or the next reminder falling due, whichever comes first.
+    fn run(&mut self) {
+        loop {
+            // MWMO_INPUTAVAILABLE is what stops a message that arrived between the drain below
+            // and this wait from being slept through.
+            unsafe {
+                MsgWaitForMultipleObjectsEx(
+                    0,
+                    ptr::null(),
+                    self.wait_milliseconds(),
+                    QS_ALLINPUT,
+                    MWMO_INPUTAVAILABLE,
+                )
+            };
 
-        if !drain_messages(store) {
-            return;
-        }
-        deliver_due(store);
-    }
-}
-
-/// Handles every queued message. Returns false when the application should stop.
-fn drain_messages(store: &mut Store) -> bool {
-    let mut message: MSG = unsafe { mem::zeroed() };
-    while unsafe { PeekMessageW(&mut message, ptr::null_mut(), 0, 0, PM_REMOVE) } != 0 {
-        if message.message == WM_QUIT {
-            return false;
-        }
-        if message.message == WM_HOTKEY {
-            on_hotkey(store);
+            if !self.drain_messages() {
+                return;
+            }
+            self.collect_answered();
+            self.deliver_due();
         }
     }
-    true
-}
 
-/// How long the loop may sleep before it must look at the reminders again.
-fn wait_milliseconds(reminders: &[Reminder]) -> u32 {
-    let now = reminder::now_unix();
-    let next_due = reminders
-        .iter()
-        .filter(|reminder| reminder.state == State::Pending)
-        .map(|reminder| reminder.due_unix)
-        .min();
-
-    match next_due {
-        None => INFINITE,
-        Some(due) if due <= now => 0,
-        Some(due) => u32::try_from((due - now) * 1000)
-            .unwrap_or(LONGEST_WAIT)
-            .min(LONGEST_WAIT),
-    }
-}
-
-/// Announces every reminder that has come due, including ones that fell due while the
-/// application was not running.
-fn deliver_due(store: &mut Store) {
-    let now = reminder::now_unix();
-    let mut delivered = false;
-
-    for reminder in &mut store.reminders {
-        if !reminder.is_due(now) {
-            continue;
-        }
-        // The notification window with its persona, Done and Snooze replaces this next.
-        println!("--- due ---\n{}\n---", reminder.text);
-        reminder.state = State::Done;
-        delivered = true;
-    }
-
-    if delivered && let Err(error) = store.save() {
-        eprintln!("could not record the delivered reminder(s): {error}");
-    }
-}
-
-fn on_hotkey(store: &mut Store) {
-    // A failed capture still opens the form, blank. Losing the user's keystroke because their
-    // clipboard misbehaved would be worse than starting from an empty box.
-    let captured = capture::capture_selection().unwrap_or_else(|error| {
-        eprintln!("capture failed: {error}");
-        None
-    });
-
-    match form::show(captured.as_deref().unwrap_or_default()) {
-        Ok(Some(entry)) => {
-            let summary = format!(
-                "--- stored, due in {}s ---\n{}\n---",
-                entry.delay.as_secs(),
-                entry.text
-            );
-            store
-                .reminders
-                .push(Reminder::due_in(entry.delay, entry.text));
-            match store.save() {
-                Ok(()) => println!("{summary}"),
-                Err(error) => eprintln!("could not store the reminder: {error}"),
+    /// Handles every queued message. Returns false when the application should stop.
+    fn drain_messages(&mut self) -> bool {
+        let mut message: MSG = unsafe { mem::zeroed() };
+        while unsafe { PeekMessageW(&mut message, ptr::null_mut(), 0, 0, PM_REMOVE) } != 0 {
+            if message.message == WM_QUIT {
+                return false;
+            }
+            if message.message == WM_HOTKEY {
+                self.on_hotkey();
+                continue;
+            }
+            // This is what gives the notifications Enter for the default button, Escape for
+            // dismissal and Tab between the two, without subclassing anything.
+            let handled = self
+                .showing
+                .iter()
+                .any(|shown| unsafe { IsDialogMessageW(shown.window(), &message) } != 0);
+            if handled {
+                continue;
+            }
+            unsafe {
+                TranslateMessage(&message);
+                DispatchMessageW(&message);
             }
         }
-        Ok(None) => println!("--- cancelled ---"),
-        Err(error) => eprintln!("could not open the form: {error}"),
+        true
+    }
+
+    /// How long the loop may sleep before it must look at the reminders again.
+    fn wait_milliseconds(&self) -> u32 {
+        let now = reminder::now_unix();
+        let next_due = self
+            .store
+            .reminders
+            .iter()
+            .enumerate()
+            .filter(|(index, reminder)| {
+                reminder.state == State::Pending && !self.is_showing(*index)
+            })
+            .map(|(_, reminder)| reminder.due_unix)
+            .min();
+
+        match next_due {
+            None => INFINITE,
+            Some(due) if due <= now => 0,
+            Some(due) => u32::try_from((due - now) * 1000)
+                .unwrap_or(LONGEST_WAIT)
+                .min(LONGEST_WAIT),
+        }
+    }
+
+    /// Opens a notification for every reminder that has come due, including ones that fell due
+    /// while the application was not running.
+    fn deliver_due(&mut self) {
+        let now = reminder::now_unix();
+        let due: Vec<usize> = self
+            .store
+            .reminders
+            .iter()
+            .enumerate()
+            .filter(|(index, reminder)| reminder.is_due(now) && !self.is_showing(*index))
+            .map(|(index, _)| index)
+            .collect();
+
+        for index in due {
+            let slot = self.free_slot();
+            let text = self.store.reminders[index].text.clone();
+            match Notification::show(&text, index, slot) {
+                Ok(notification) => self.showing.push(notification),
+                // Without a window there is no way to tell the user, and re-trying every second
+                // would be worse than saying so once and leaving the reminder pending.
+                Err(error) => eprintln!("could not show the reminder: {error}\n{text}"),
+            }
+        }
+    }
+
+    /// Applies the outcome of every notification the user has closed.
+    fn collect_answered(&mut self) {
+        let mut answered = false;
+        let mut index = 0;
+        while index < self.showing.len() {
+            if !self.showing[index].finished() {
+                index += 1;
+                continue;
+            }
+            let notification = self.showing.remove(index);
+            let reminder = &mut self.store.reminders[notification.reminder];
+            match notification.outcome() {
+                Outcome::Done => reminder.state = State::Done,
+                Outcome::Snoozed => reminder.due_unix = reminder::now_unix() + SNOOZE_SECONDS,
+            }
+            answered = true;
+        }
+
+        if answered && let Err(error) = self.store.save() {
+            eprintln!("could not record the answered reminder(s): {error}");
+        }
+    }
+
+    fn is_showing(&self, reminder: usize) -> bool {
+        self.showing.iter().any(|shown| shown.reminder == reminder)
+    }
+
+    /// The lowest corner position no open notification is using.
+    fn free_slot(&self) -> usize {
+        (0..)
+            .find(|slot| !self.showing.iter().any(|shown| shown.slot == *slot))
+            .unwrap_or(0)
+    }
+
+    fn on_hotkey(&mut self) {
+        // A failed capture still opens the form, blank. Losing the user's keystroke because
+        // their clipboard misbehaved would be worse than starting from an empty box.
+        let captured = capture::capture_selection().unwrap_or_else(|error| {
+            eprintln!("capture failed: {error}");
+            None
+        });
+
+        match form::show(captured.as_deref().unwrap_or_default()) {
+            Ok(Some(entry)) => {
+                let summary = format!("stored, due in {}s", entry.delay.as_secs());
+                self.store
+                    .reminders
+                    .push(Reminder::due_in(entry.delay, entry.text));
+                match self.store.save() {
+                    Ok(()) => println!("{summary}"),
+                    Err(error) => eprintln!("could not store the reminder: {error}"),
+                }
+            }
+            Ok(None) => println!("cancelled"),
+            Err(error) => eprintln!("could not open the form: {error}"),
+        }
     }
 }
