@@ -124,9 +124,10 @@ component to ship.
 
 - Agree the look of the reminder input form.
 - Agree the look of the due notification, including the persona.
-- Cover the light and dark system themes.
-- Rebuild the input form to match.
-- Rebuild the notification to match.
+- Rebuild the input form to match, with quick picks alongside the typed time.
+- Rebuild the notification to match, with three snooze options and Done.
+- Animate the persona, which idles and blinks rather than sitting still.
+- Record how many times a reminder has been snoozed, and show it on the notification.
 
 ### Done when
 

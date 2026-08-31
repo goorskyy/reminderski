@@ -32,13 +32,13 @@
   /* The application's own palette, read off the photographs. */
   :root {
     --ink: #0d0d0b;
-    --paper: #eceae4;
-    --field: #fbfaf7;
+    --paper: #ffffff;
+    --field: #ffffff;
     --hairline: #14140f;
     --label: #8b897f;
     --bar: #0a0a08;
     --bar-ink: #f2f1ea;
-    --edge: #c6c4ba;
+    --edge: #b9b7ae;
   }
 
   * { box-sizing: border-box; }
@@ -168,7 +168,7 @@
   .quick .action { flex: 1; }
   .timerow { display: flex; gap: 14px; align-items: center; }
   .timerow .field { height: 48px; padding-top: 0; padding-bottom: 0; }
-  .timerow .action { height: 60px; width: 104px; justify-content: center; }
+  .timerow .action { height: 48px; width: 104px; justify-content: center; }
   .hint {
     font-size: 12px;
     letter-spacing: 0.04em;
@@ -245,6 +245,18 @@
     border: 1px solid var(--page-rule);
   }
 
+  .moods { display: flex; flex-wrap: wrap; gap: 14px; }
+  .mood {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    font-size: 10.5px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--page-muted);
+  }
+  .mood b { font-size: 15px; letter-spacing: 0.04em; color: var(--page-ink); }
+
   @media (max-width: 700px) {
     .sheet { padding: 24px 14px 48px; }
     .form, .toast { width: 100%; min-width: 0; }
@@ -303,7 +315,7 @@
         <div class="titlebar"><span>REMINDERSKI !!</span><span class="close">[X]</span></div>
         <div class="body">
           <div class="top">
-            <div class="box face">( ._. )</div>
+            <div class="box face" id="face" aria-label="Reminderski, idling">( ._. )</div>
             <div class="message">
               <span class="label">Excuse me... but: (snoozed 2&times;)</span>
               <p>talk to Michal about weird commit validation</p>
@@ -313,12 +325,11 @@
             <button class="box action" type="button">+30 min</button>
             <button class="box action" type="button">+2 hrs</button>
             <button class="box action" type="button">Tomorrow</button>
-            <button class="box action" type="button">Next week</button>
             <button class="box action filled" type="button">Done &#10003;</button>
           </div>
         </div>
       </div>
-      <figcaption><b>Due notification</b><span>520 &times; 260</span></figcaption>
+      <figcaption><b>Due notification</b><span>520 &times; 240</span></figcaption>
     </figure>
   </div>
 
@@ -327,8 +338,8 @@
       <h2>Palette</h2>
       <div class="swatches">
         <span class="swatch"><span class="chip" style="background:#0d0d0b"></span>#0D0D0B ink</span>
-        <span class="swatch"><span class="chip" style="background:#eceae4"></span>#ECEAE4 paper</span>
-        <span class="swatch"><span class="chip" style="background:#fbfaf7"></span>#FBFAF7 field</span>
+        <span class="swatch"><span class="chip" style="background:#ffffff"></span>#FFFFFF paper</span>
+        
         <span class="swatch"><span class="chip" style="background:#8b897f"></span>#8B897F label</span>
         <span class="swatch"><span class="chip" style="background:#0a0a08"></span>#0A0A08 bar</span>
       </div>
@@ -348,13 +359,57 @@
     </div>
 
     <div class="note">
+      <h2>The character</h2>
+      <p class="standfirst" style="font-size:12.5px">
+        It idles and blinks rather than sitting still, and its expression is meant to follow
+        what you have actually been doing &mdash; how long it has been waiting, how many times
+        you have pushed it back.
+      </p>
+      <div class="moods">
+        <span class="mood"><b>( ._. )</b>idle</span>
+        <span class="mood"><b>( -_- )</b>waiting</span>
+        <span class="mood"><b>( &gt;_&lt; )</b>snoozed again</span>
+        <span class="mood"><b>( ^_^ )</b>done</span>
+      </div>
+    </div>
+
+    <div class="note">
       <h2>Open questions</h2>
       <ul>
-        <li>The original counts snoozes (<b>snoozed 2&times;</b>). Worth keeping?</li>
-        <li>Four snooze buttons here against one today. Are these the right four?</li>
-        <li>Does the persona change, or is <b>( ._. )</b> the one face?</li>
         <li>Quick picks on the form: are <b>10 min / 1 hour / tomorrow 9am</b> your real three?</li>
+        <li>Are the moods above the right set, and does the mood come from the snooze count, the
+          waiting time, or both?</li>
+        <li>Window sizes are my guess: <b>620 &times; 470</b> and <b>520 &times; 260</b>.</li>
       </ul>
     </div>
   </div>
 </div>
+
+<script>
+  // The persona idles rather than sitting still: mostly open-eyed, with the occasional blink
+  // and a glance sideways. Every frame is the same width so the box never twitches.
+  (function () {
+    var face = document.getElementById("face");
+    if (!face || window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      return;
+    }
+    var idle = "( ._. )";
+    var script = [
+      [idle, 2600],
+      ["( -_- )", 130],
+      [idle, 260],
+      ["( -_- )", 130],
+      [idle, 3400],
+      ["( ._o )", 700],
+      [idle, 1800],
+      ["( o_. )", 700],
+    ];
+    var step = 0;
+    (function next() {
+      var frame = script[step % script.length];
+      face.textContent = frame[0];
+      step += 1;
+      setTimeout(next, frame[1]);
+    })();
+  })();
+</script>
