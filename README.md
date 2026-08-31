@@ -28,6 +28,10 @@ cargo fmt --check
 cargo clippy --all-targets
 ```
 
+## Data
+
+Reminders are stored in `%APPDATA%\Reminderski\reminders.txt`, one per line.
+
 ## Project status
 
 Early development.
