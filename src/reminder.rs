@@ -11,21 +11,39 @@ const DEFAULT_MORNING: u32 = 9 * 3600;
 
 const DAY: u32 = 24 * 3600;
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum State {
+    Pending,
+    Done,
+}
+
 pub struct Reminder {
     /// Seconds since the Unix epoch. Stored as an instant rather than a delay so that a
     /// reminder written before a restart still comes due at the time the user asked for.
     pub due_unix: u64,
+    pub state: State,
     pub text: String,
 }
 
 impl Reminder {
     pub fn due_in(delay: Duration, text: String) -> Self {
-        let due = SystemTime::now() + delay;
         Self {
-            due_unix: due.duration_since(UNIX_EPOCH).unwrap_or_default().as_secs(),
+            due_unix: now_unix() + delay.as_secs(),
+            state: State::Pending,
             text,
         }
     }
+
+    pub fn is_due(&self, now: u64) -> bool {
+        self.state == State::Pending && self.due_unix <= now
+    }
+}
+
+pub fn now_unix() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs()
 }
 
 /// Reads a time expression and answers how long from now it means.
@@ -260,11 +278,18 @@ mod tests {
 
     #[test]
     fn due_in_is_the_delay_from_now() {
-        let now = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_secs();
+        let now = now_unix();
         let reminder = Reminder::due_in(Duration::from_secs(600), "tea".to_string());
         assert!(reminder.due_unix >= now + 600 && reminder.due_unix <= now + 602);
+        assert!(!reminder.is_due(now));
+        assert!(reminder.is_due(now + 600));
+    }
+
+    #[test]
+    fn a_finished_reminder_never_comes_due_again() {
+        let mut reminder = Reminder::due_in(Duration::from_secs(0), "tea".to_string());
+        assert!(reminder.is_due(now_unix()));
+        reminder.state = State::Done;
+        assert!(!reminder.is_due(now_unix()));
     }
 }

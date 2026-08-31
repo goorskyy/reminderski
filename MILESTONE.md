@@ -129,6 +129,7 @@ The user can inspect and manage reminders through the local dashboard.
 
 - Fix issues discovered during previous milestones.
 - Raise the already open input form when the shortcut is pressed again, instead of ignoring the press.
+- Understand day names in time expressions, such as `friday` or `next tuesday`.
 - Improve startup and interaction speed.
 - Verify persistence and recovery.
 - Polish minimal monochrome UI.
