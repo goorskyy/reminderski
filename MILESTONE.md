@@ -128,6 +128,7 @@ The user can inspect and manage reminders through the local dashboard.
 ### Work
 
 - Fix issues discovered during previous milestones.
+- Raise the already open input form when the shortcut is pressed again, instead of ignoring the press.
 - Improve startup and interaction speed.
 - Verify persistence and recovery.
 - Polish minimal monochrome UI.
