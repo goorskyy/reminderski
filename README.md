@@ -27,6 +27,16 @@ choose Quit.
 
 It does not start with Windows, so run it again after a restart.
 
+## Dashboard
+
+Double-click the tray icon, or right-click it and choose *Open dashboard*, for a page listing
+what is waiting and what is finished, with Done and snooze on each. It is at
+<http://127.0.0.1:7654> while Reminderski is running, and on another port if something else
+already has that one.
+
+The page is built into the executable and served from the loopback address, so it works with no
+network and nothing outside this machine can reach it.
+
 Releases are cut by tagging: pushing a tag such as `0.0.1` builds that commit and attaches the
 executables to a GitHub release of the same name.
 

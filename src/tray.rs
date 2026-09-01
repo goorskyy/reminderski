@@ -19,13 +19,14 @@ use windows_sys::Win32::Graphics::Gdi::{
 use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows_sys::Win32::UI::Shell::{
     NIF_ICON, NIF_MESSAGE, NIF_TIP, NIM_ADD, NIM_DELETE, NOTIFYICONDATAW, Shell_NotifyIconW,
+    ShellExecuteW,
 };
 use windows_sys::Win32::UI::WindowsAndMessaging::{
     AppendMenuW, CreateIconIndirect, CreatePopupMenu, CreateWindowExW, DefWindowProcW, DestroyIcon,
     DestroyMenu, DestroyWindow, GetCursorPos, GetSystemMetrics, HICON, ICONINFO, IDC_ARROW,
     LoadCursorW, MF_STRING, PostQuitMessage, RegisterClassW, SM_CXSMICON, SM_CYSMICON,
-    SetForegroundWindow, TPM_RIGHTBUTTON, TrackPopupMenu, WM_APP, WM_COMMAND, WM_NULL,
-    WM_RBUTTONUP, WNDCLASSW, WS_OVERLAPPED,
+    SW_SHOWNORMAL, SetForegroundWindow, TPM_RIGHTBUTTON, TrackPopupMenu, WM_APP, WM_COMMAND,
+    WM_LBUTTONDBLCLK, WM_NULL, WM_RBUTTONUP, WNDCLASSW, WS_OVERLAPPED,
 };
 
 use crate::ui::{BAR, BAR_INK, draw_text, fill, mono_font, wide};
@@ -35,7 +36,11 @@ const TOOLTIP: &str = "Reminderski — Ctrl+Alt+R to capture";
 
 /// The message the shell sends us about the icon, and the one menu item there is.
 const TRAY_MESSAGE: u32 = WM_APP + 1;
-const ID_QUIT: usize = 1;
+const ID_DASHBOARD: usize = 1;
+const ID_QUIT: usize = 2;
+
+/// The dashboard address, so the menu can open it. Set once, before the icon appears.
+static ADDRESS: OnceLock<String> = OnceLock::new();
 
 pub struct Tray {
     window: HWND,
@@ -43,7 +48,11 @@ pub struct Tray {
 }
 
 impl Tray {
-    pub fn show() -> io::Result<Self> {
+    /// `address` is where the dashboard is listening, when it managed to start.
+    pub fn show(address: Option<String>) -> io::Result<Self> {
+        if let Some(address) = address {
+            let _ = ADDRESS.set(address);
+        }
         register_class()?;
 
         // Never shown. It exists because the shell needs a window to send the icon's messages
@@ -201,6 +210,15 @@ unsafe extern "system" fn window_proc(
             show_menu(window);
             0
         }
+        // Double-clicking the icon is the shortest way to the dashboard.
+        TRAY_MESSAGE if (lparam as u32) == WM_LBUTTONDBLCLK => {
+            open_dashboard();
+            0
+        }
+        WM_COMMAND if (wparam & 0xffff) == ID_DASHBOARD => {
+            open_dashboard();
+            0
+        }
         WM_COMMAND if (wparam & 0xffff) == ID_QUIT => {
             // Ends the application's message loop, which then puts the icon away.
             unsafe { PostQuitMessage(0) };
@@ -210,12 +228,39 @@ unsafe extern "system" fn window_proc(
     }
 }
 
+/// Hands the address to whatever the machine opens web pages with.
+fn open_dashboard() {
+    let Some(address) = ADDRESS.get() else {
+        return;
+    };
+    unsafe {
+        ShellExecuteW(
+            ptr::null_mut(),
+            wide("open").as_ptr(),
+            wide(address).as_ptr(),
+            ptr::null(),
+            ptr::null(),
+            SW_SHOWNORMAL,
+        )
+    };
+}
+
 fn show_menu(window: HWND) {
     let menu = unsafe { CreatePopupMenu() };
     if menu.is_null() {
         return;
     }
-    unsafe { AppendMenuW(menu, MF_STRING, ID_QUIT, wide("Quit Reminderski").as_ptr()) };
+    unsafe {
+        if ADDRESS.get().is_some() {
+            AppendMenuW(
+                menu,
+                MF_STRING,
+                ID_DASHBOARD,
+                wide("Open dashboard").as_ptr(),
+            );
+        }
+        AppendMenuW(menu, MF_STRING, ID_QUIT, wide("Quit Reminderski").as_ptr());
+    }
 
     let mut cursor = POINT::default();
     unsafe {
