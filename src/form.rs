@@ -42,8 +42,9 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{
 use crate::notify::WM_MOUSELEAVE;
 use crate::reminder;
 use crate::ui::{
-    BAR, BAR_INK, HOVER, HOVER_FILLED, INK, LABEL, PAPER, contains, draw_text, fill, inset,
-    mono_font, outline, point_of, scale, wide,
+    BAR, BAR_INK, BUTTON_SIZE, FIELD_SIZE, HINT_SIZE, HOVER, HOVER_FILLED, INK, LABEL, LABEL_SIZE,
+    LABEL_TRACKING, PAPER, TITLE_SIZE, TITLE_TRACKING, contains, draw_text, fill, inset, mono_font,
+    outline, point_of, scale, wide,
 };
 
 const CLASS_NAME: &str = "ReminderskiForm";
@@ -67,17 +68,6 @@ const CANCEL_WIDTH: i32 = 118;
 const CANCEL_HEIGHT: i32 = 38;
 const HINT_HEIGHT: i32 = 17;
 const EDIT_INSET: i32 = 10;
-
-/// Type sizes, also in logical pixels.
-const TITLE_SIZE: i32 = 13;
-const LABEL_SIZE: i32 = 13;
-const FIELD_SIZE: i32 = 14;
-const BUTTON_SIZE: i32 = 12;
-/// The examples under the time field sit below the labels rather than beside them.
-const HINT_SIZE: i32 = 11;
-
-const TITLE_TRACKING: i32 = 3;
-const LABEL_TRACKING: i32 = 2;
 
 /// One click for the times a reminder actually gets set for.
 const QUICK: [(&str, &str); 3] = [
@@ -310,11 +300,25 @@ impl Form {
     }
 
     /// Puts the edit controls inside the boxes drawn for them.
+    ///
+    /// The multiline box fills its frame and its text starts at the top. A single line control
+    /// draws its text at the top too, so the time field is made one line tall and that line is
+    /// centred in the box instead.
     fn place_fields(&self) {
-        let layout = Layout::of(self.window, self.state.dpi);
-        let inset_by = scale(EDIT_INSET, self.state.dpi);
-        for (field, around) in [(self.text, layout.text_box), (self.when, layout.time_box)] {
-            let area = inset(&around, inset_by, inset_by / 2);
+        let dpi = self.state.dpi;
+        let layout = Layout::of(self.window, dpi);
+        let inset_by = scale(EDIT_INSET, dpi);
+
+        let text_area = inset(&layout.text_box, inset_by, inset_by / 2);
+        let line = scale(FIELD_SIZE, dpi) * 3 / 2;
+        let box_height = layout.time_box.bottom - layout.time_box.top;
+        let time_area = RECT {
+            top: layout.time_box.top + (box_height - line) / 2,
+            bottom: layout.time_box.top + (box_height - line) / 2 + line,
+            ..inset(&layout.time_box, inset_by, 0)
+        };
+
+        for (field, area) in [(self.text, text_area), (self.when, time_area)] {
             unsafe {
                 MoveWindow(
                     field,
@@ -457,13 +461,19 @@ impl Layout {
 
         let mut buttons = [RECT::default(); BUTTONS];
 
+        // The last quick pick is stretched to the right edge, so dividing by three cannot leave
+        // it a pixel or two narrow than the other two.
         let quick_gap = scale(QUICK_GAP, dpi);
         let quick_width = (quick_row.right - quick_row.left - quick_gap * 2) / 3;
         for (index, button) in buttons.iter_mut().take(QUICK.len()).enumerate() {
             let start = quick_row.left + (quick_width + quick_gap) * index as i32;
             *button = RECT {
                 left: start,
-                right: start + quick_width,
+                right: if index == QUICK.len() - 1 {
+                    quick_row.right
+                } else {
+                    start + quick_width
+                },
                 ..quick_row
             };
         }

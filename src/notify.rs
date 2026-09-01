@@ -40,8 +40,9 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{
 
 use crate::persona::{self, Mood};
 use crate::ui::{
-    BAR, BAR_INK, HOVER, HOVER_FILLED, INK, LABEL, PAPER, centred_block, contains, draw_text, fill,
-    inset, mono_font, outline, point_of, scale, wide,
+    BAR, BAR_INK, BUTTON_SIZE, HOVER, HOVER_FILLED, INK, LABEL, LABEL_SIZE, LABEL_TRACKING,
+    MESSAGE_SIZE, PAPER, PERSONA_SIZE, TITLE_SIZE, TITLE_TRACKING, centred_block, contains,
+    draw_text, fill, inset, mono_font, outline, point_of, scale, wide,
 };
 
 const CLASS_NAME: &str = "ReminderskiNotification";
@@ -57,17 +58,6 @@ const FACE: i32 = 152;
 const BUTTON_HEIGHT: i32 = 44;
 const DONE_WIDTH: i32 = 118;
 
-/// Type sizes, also in logical pixels.
-const TITLE_SIZE: i32 = 13;
-const LABEL_SIZE: i32 = 11;
-const MESSAGE_SIZE: i32 = 17;
-const BUTTON_SIZE: i32 = 12;
-const PERSONA_SIZE: i32 = 19;
-
-/// Letter spacing for the uppercase runs, which is most of the window.
-const TITLE_TRACKING: i32 = 3;
-const LABEL_TRACKING: i32 = 2;
-
 const ANIMATION_TIMER: usize = 1;
 
 /// Sent once after TrackMouseEvent is asked for it. It lives with the common controls rather
@@ -79,7 +69,9 @@ const ACTIONS: [(&str, &str); 4] = [
     ("+30 MIN", "30m"),
     ("+2 HRS", "2h"),
     ("TOMORROW", "tomorrow"),
-    ("DONE  \u{2713}", ""),
+    // No tick: it is not in Consolas, so Windows fetches it from another font and then measures
+    // it at a width it does not draw it at, which pushes the label off centre by eight pixels.
+    ("DONE", ""),
 ];
 const DONE: usize = ACTIONS.len() - 1;
 
@@ -339,30 +331,32 @@ impl Layout {
             bottom: face_rect.bottom,
         };
 
-        // Done keeps a fixed width; the three snoozes share what is left.
+        // Done keeps a fixed width at the right; the three snoozes share what is left. The last
+        // snooze is stretched to meet Done so that dividing by three cannot leave a ragged gap.
         let buttons_top = face_rect.bottom + scale(16, dpi);
-        let available = client.right - padding * 2 - done_width - gap * (ACTIONS.len() as i32 - 1);
-        let snooze_width = available / (ACTIONS.len() as i32 - 1);
+        let done_left = client.right - padding - done_width;
+        let snoozes = ACTIONS.len() as i32 - 1;
+        let snooze_width = (done_left - gap - padding - gap * (snoozes - 1)) / snoozes;
+
         let mut buttons = [RECT::default(); ACTIONS.len()];
-        let mut left = padding;
         for (index, button) in buttons.iter_mut().enumerate() {
-            let width = if index == DONE {
-                done_width
-            } else {
-                snooze_width
-            };
-            let left_edge = if index == DONE {
-                client.right - padding - done_width
-            } else {
-                left
+            let (left, right) = match index {
+                DONE => (done_left, client.right - padding),
+                _ if index as i32 == snoozes - 1 => (
+                    padding + (snooze_width + gap) * index as i32,
+                    done_left - gap,
+                ),
+                _ => {
+                    let left = padding + (snooze_width + gap) * index as i32;
+                    (left, left + snooze_width)
+                }
             };
             *button = RECT {
-                left: left_edge,
+                left,
                 top: buttons_top,
-                right: left_edge + width,
+                right,
                 bottom: buttons_top + button_height,
             };
-            left += width + gap;
         }
 
         Self {

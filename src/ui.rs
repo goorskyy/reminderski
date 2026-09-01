@@ -5,13 +5,29 @@ use std::mem;
 
 use windows_sys::Win32::Foundation::{COLORREF, LPARAM, POINT, RECT};
 use windows_sys::Win32::Graphics::Gdi::{
-    CreateFontIndirectW, CreateSolidBrush, DT_CALCRECT, DT_CENTER, DT_NOPREFIX, DeleteObject,
-    DrawTextW, FillRect, FrameRect, HBRUSH, HDC, HFONT, LOGFONTW, SelectObject,
+    CreateFontIndirectW, CreateSolidBrush, DT_CALCRECT, DT_CENTER, DT_NOPREFIX, DT_SINGLELINE,
+    DeleteObject, DrawTextW, FillRect, FrameRect, HBRUSH, HDC, HFONT, LOGFONTW, SelectObject,
     SetTextCharacterExtra, SetTextColor,
 };
 
-/// A fixed-pitch face for the persona, which only lines up in one.
+/// Everything is set in one fixed-pitch face, which is also the only kind the persona lines up in.
 const MONOSPACE_FACE: &str = "Consolas";
+
+/// One type scale for the whole application, in logical pixels at 96 DPI. Both windows read
+/// their sizes from here so that the same kind of thing is never set two ways.
+pub const TITLE_SIZE: i32 = 13;
+pub const LABEL_SIZE: i32 = 13;
+/// The examples under the time field, which sit below the labels.
+pub const HINT_SIZE: i32 = 11;
+pub const BUTTON_SIZE: i32 = 14;
+/// What you type, and what the reminder says when it comes back.
+pub const FIELD_SIZE: i32 = 15;
+pub const MESSAGE_SIZE: i32 = 17;
+pub const PERSONA_SIZE: i32 = 19;
+
+/// Letter spacing for the uppercase runs, which is most of both windows.
+pub const TITLE_TRACKING: i32 = 3;
+pub const LABEL_TRACKING: i32 = 2;
 
 pub fn wide(text: &str) -> Vec<u16> {
     text.encode_utf16().chain(once(0)).collect()
@@ -100,12 +116,45 @@ pub fn draw_text(
     }
 
     let mut area = *rect;
+    let mut flags = flags;
+    if tracking != 0 && flags & DT_CENTER != 0 {
+        // GDI centres a run by a width it measures without counting the character spacing it
+        // then draws with, so the text lands right of centre by half of everything the spacing
+        // adds — which grows with the length of the label. Measuring the run and placing it by
+        // hand is the only way to get it actually centred.
+        area.left =
+            rect.left + ((rect.right - rect.left) - spaced_width(hdc, content, dpi, tracking)) / 2;
+        flags &= !DT_CENTER;
+    }
     unsafe { DrawTextW(hdc, content.as_ptr(), -1, &mut area, flags) };
 
     unsafe {
         SetTextCharacterExtra(hdc, 0);
         SelectObject(hdc, previous);
     }
+}
+
+/// How wide a single line of `content` actually comes out, spacing included.
+///
+/// The spacing goes after every character, so it widens the run by one gap per character. The
+/// gap after the last one is trailing air rather than ink, which is why it is taken off again.
+fn spaced_width(hdc: HDC, content: &[u16], dpi: u32, tracking: i32) -> i32 {
+    let extra = scale(tracking, dpi);
+    let characters = content.len().saturating_sub(1) as i32;
+
+    let mut measured = RECT::default();
+    unsafe {
+        SetTextCharacterExtra(hdc, 0);
+        DrawTextW(
+            hdc,
+            content.as_ptr(),
+            -1,
+            &mut measured,
+            DT_SINGLELINE | DT_NOPREFIX | DT_CALCRECT,
+        );
+        SetTextCharacterExtra(hdc, extra);
+    }
+    (measured.right - measured.left) + extra * (characters - 1).max(0)
 }
 
 /// Draws several lines centred in a box. DT_VCENTER only works on one line, so the block is
