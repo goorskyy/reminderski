@@ -141,6 +141,8 @@ application rather than in the mock-up.
 
 ## M6 — Release
 
+**Status: done.** v0.0.1 is published, with an executable for each architecture and their hashes.
+
 **Goal:** Make Reminderski something the human can put on another machine without building it.
 
 The workflow this exists to support: create a tag on GitHub, wait, then go to the repository
