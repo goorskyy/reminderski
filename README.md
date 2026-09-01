@@ -21,8 +21,11 @@ nothing to install and nothing else to download: the executable is self-containe
 On an ARM64 machine take `reminderski-aarch64-pc-windows-msvc.exe` instead. The x64 one also
 runs there, emulated.
 
-Running it opens a console window, which is how you quit it: Ctrl+C, or close the window. Leave
-it running and press Ctrl+Alt+R whenever you want to set a reminder.
+Running it puts an `R` in the notification area and nothing else on screen. Leave it there and
+press Ctrl+Alt+R whenever you want to set a reminder. To stop it, right-click the icon and
+choose Quit.
+
+It does not start with Windows, so run it again after a restart.
 
 Releases are cut by tagging: pushing a tag such as `v0.0.1` builds that commit and attaches the
 executables to a GitHub release of the same name.
@@ -54,6 +57,9 @@ means 09:00.
 ## Data
 
 Reminders are stored in `%APPDATA%\Reminderski\reminders.txt`, one per line.
+
+Anything that goes wrong is written to `%APPDATA%\Reminderski\reminderski.log`. No file means
+nothing has gone wrong.
 
 ## Project status
 
