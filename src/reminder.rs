@@ -184,9 +184,15 @@ fn unit_seconds(unit: &str) -> Option<u64> {
     })
 }
 
-fn local_time_of_day() -> u32 {
+/// The local wall clock, which is what the user set their reminder against.
+pub fn local_now() -> SYSTEMTIME {
     let mut now: SYSTEMTIME = unsafe { mem::zeroed() };
     unsafe { GetLocalTime(&mut now) };
+    now
+}
+
+fn local_time_of_day() -> u32 {
+    let now = local_now();
     u32::from(now.wHour) * 3600 + u32::from(now.wMinute) * 60 + u32::from(now.wSecond)
 }
 

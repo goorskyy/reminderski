@@ -50,7 +50,11 @@ impl Store {
                 // Only this application writes the file, so an unreadable line means it was
                 // damaged. Say so rather than passing over it in silence.
                 None => {
-                    eprintln!("{}: line {} is unreadable", path.display(), index + 1);
+                    crate::log::problem(&format!(
+                        "{}: line {} is unreadable",
+                        path.display(),
+                        index + 1
+                    ));
                     unreadable.push(line.to_string());
                 }
             }
@@ -82,17 +86,6 @@ impl Store {
         let temporary = self.path.with_extension("tmp");
         fs::write(&temporary, contents)?;
         fs::rename(&temporary, &self.path)
-    }
-
-    pub fn path(&self) -> &Path {
-        &self.path
-    }
-
-    pub fn pending(&self) -> usize {
-        self.reminders
-            .iter()
-            .filter(|reminder| reminder.state == State::Pending)
-            .count()
     }
 }
 

@@ -1,10 +1,16 @@
+// No console: the application lives in the notification area, and anything that goes wrong is
+// written to the log beside the reminder file.
+#![windows_subsystem = "windows"]
+
 mod capture;
 mod clipboard;
 mod form;
+mod log;
 mod notify;
 mod persona;
 mod reminder;
 mod store;
+mod tray;
 mod ui;
 
 use std::io;
@@ -22,6 +28,7 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{
 use crate::notify::{Notification, Outcome};
 use crate::reminder::{Reminder, State};
 use crate::store::Store;
+use crate::tray::Tray;
 
 const HOTKEY_ID: i32 = 1;
 const VK_R: u32 = 0x52;
@@ -43,10 +50,15 @@ struct App {
 fn main() -> io::Result<()> {
     capture::ignore_self_inflicted_ctrl_c();
 
+    let path = store::default_path()?;
+    log::write_to(path.with_file_name("reminderski.log"));
     let mut app = App {
-        store: Store::open(store::default_path()?)?,
+        store: Store::open(path)?,
         showing: Vec::new(),
     };
+
+    // Held until the loop ends, which is what puts the icon away again.
+    let _tray = Tray::show()?;
 
     // A null window handle posts WM_HOTKEY to this thread's message queue, so no window is
     // needed to receive it.
@@ -62,12 +74,6 @@ fn main() -> io::Result<()> {
         return Err(io::Error::last_os_error());
     }
 
-    println!("Reminderski: press Ctrl+Alt+R to capture the selected text. Ctrl+C here to quit.");
-    println!(
-        "{} reminder(s) waiting in {}",
-        app.store.pending(),
-        app.store.path().display()
-    );
     app.run();
 
     unsafe { UnregisterHotKey(ptr::null_mut(), HOTKEY_ID) };
@@ -170,7 +176,9 @@ impl App {
                 Ok(notification) => self.showing.push(notification),
                 // Without a window there is no way to tell the user, and re-trying every second
                 // would be worse than saying so once and leaving the reminder pending.
-                Err(error) => eprintln!("could not show the reminder: {error}\n{text}"),
+                Err(error) => {
+                    log::problem(&format!("could not show the reminder: {error}\n{text}"));
+                }
             }
         }
     }
@@ -197,7 +205,9 @@ impl App {
         }
 
         if answered && let Err(error) = self.store.save() {
-            eprintln!("could not record the answered reminder(s): {error}");
+            log::problem(&format!(
+                "could not record the answered reminder(s): {error}"
+            ));
         }
     }
 
@@ -216,23 +226,21 @@ impl App {
         // A failed capture still opens the form, blank. Losing the user's keystroke because
         // their clipboard misbehaved would be worse than starting from an empty box.
         let captured = capture::capture_selection().unwrap_or_else(|error| {
-            eprintln!("capture failed: {error}");
+            log::problem(&format!("capture failed: {error}"));
             None
         });
 
         match form::show(captured.as_deref().unwrap_or_default()) {
             Ok(Some(entry)) => {
-                let summary = format!("stored, due in {}s", entry.delay.as_secs());
                 self.store
                     .reminders
                     .push(Reminder::due_in(entry.delay, entry.text));
-                match self.store.save() {
-                    Ok(()) => println!("{summary}"),
-                    Err(error) => eprintln!("could not store the reminder: {error}"),
+                if let Err(error) = self.store.save() {
+                    log::problem(&format!("could not store the reminder: {error}"));
                 }
             }
-            Ok(None) => println!("cancelled"),
-            Err(error) => eprintln!("could not open the form: {error}"),
+            Ok(None) => {}
+            Err(error) => log::problem(&format!("could not open the form: {error}")),
         }
     }
 }
