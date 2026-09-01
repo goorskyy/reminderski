@@ -1,6 +1,6 @@
 [package]
 name = "reminderski"
-version = "0.1.0"
+version = "0.0.1"
 edition = "2024"
 
 [dependencies]
@@ -17,6 +17,15 @@ windows-sys = { version = "0.61.2", features = [
     "Win32_UI_Input_KeyboardAndMouse",
     "Win32_UI_WindowsAndMessaging",
 ] }
+
+[profile.release]
+# A small, quick executable is worth more here than a fast build.
+lto = true
+codegen-units = 1
+strip = true
+# A panic crossing back into a Windows callback is undefined behaviour, so stopping at the
+# panic is safer than unwinding through it.
+panic = "abort"
 
 [lints.clippy]
 all = { level = "deny", priority = -1 }

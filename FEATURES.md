@@ -27,3 +27,4 @@ Nothing in this file is approved work unless explicitly moved into a milestone.
 | 19 | Local network sync | High | Synchronize clients without relying on a cloud service. |
 | 20 | Configurable shortcut | Low | Let the user change the global capture shortcut, which is fixed at Ctrl+Alt+R. |
 | 21 | Persona reacts to your habits | Medium | Let the character's expression and remarks follow the stored history, such as how often reminders are snoozed or left unanswered. |
+| 22 | winget package | Medium | Publish a winget manifest so Reminderski can be installed with `winget install`, pointing at the GitHub release. |

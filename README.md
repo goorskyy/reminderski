@@ -12,6 +12,21 @@ The initial target is Windows.
 
 The application is intentionally small, monochrome, keyboard-first, and local.
 
+## Installing
+
+Download `reminderski-x86_64-pc-windows-msvc.exe` from the
+[latest release](https://github.com/goorskyy/reminderski/releases/latest) and run it. There is
+nothing to install and nothing else to download: the executable is self-contained.
+
+On an ARM64 machine take `reminderski-aarch64-pc-windows-msvc.exe` instead. The x64 one also
+runs there, emulated.
+
+Running it opens a console window, which is how you quit it: Ctrl+C, or close the window. Leave
+it running and press Ctrl+Alt+R whenever you want to set a reminder.
+
+Releases are cut by tagging: pushing a tag such as `v0.0.1` builds that commit and attaches the
+executables to a GitHub release of the same name.
+
 ## Building
 
 Requires a Rust MSVC toolchain and Visual Studio Build Tools with the *Desktop development

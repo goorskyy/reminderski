@@ -114,6 +114,9 @@ A user can create a reminder, wait for it, receive it, complete it, or snooze it
 
 ## M5 — Visual Design
 
+**Status: built, not settled.** Both windows are drawn to the agreed design. Tuning them is
+deferred, so this stays open until the human is happy with how they look.
+
 **Goal:** Settle how Reminderski looks, before there is more of it to redo.
 
 The design is agreed as HTML and CSS, which is quicker to look at and argue about than Win32
@@ -136,7 +139,29 @@ application rather than in the mock-up.
 
 ---
 
-## M6 — Local Dashboard
+## M6 — Release
+
+**Goal:** Make Reminderski something the human can put on another machine without building it.
+
+The workflow this exists to support: create a tag on GitHub, wait, then go to the repository
+from any Windows machine, download the executable and run it.
+
+### Work
+
+- Build release executables for a tagged commit in CI.
+- Attach them to a GitHub release, with their hashes.
+- Link the C runtime into the executable, so it runs on a machine that has never had Visual
+  Studio on it.
+- Write down where the executable is and what running it does.
+
+### Done when
+
+Pushing a tag produces a GitHub release whose executable runs on a Windows machine that has
+never had Rust or Visual Studio installed, with no other download required.
+
+---
+
+## M7 — Local Dashboard
 
 **Goal:** Provide a simple local overview of reminders.
 
@@ -153,7 +178,7 @@ The user can inspect and manage reminders through the local dashboard.
 
 ---
 
-## M7 — MVP Polish
+## M8 — MVP Polish
 
 **Goal:** Make the complete workflow reliable and pleasant enough to call Reminderski an MVP.
 

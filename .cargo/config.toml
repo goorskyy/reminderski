@@ -1,0 +1,5 @@
+# Link the C runtime into the executable rather than against a DLL. Without this, a downloaded
+# Reminderski refuses to start on a machine that has never had the Visual C++ redistributable
+# installed, which is not a reasonable thing to ask of someone who just wants a reminder.
+[target.'cfg(target_env = "msvc")']
+rustflags = ["-Ctarget-feature=+crt-static"]
