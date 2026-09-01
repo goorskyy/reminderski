@@ -1,11 +1,13 @@
 name: Release
 
-# Tagging is what publishes. Pushing v0.0.1 builds that commit and attaches the executables
-# to a GitHub release of the same name.
+# Tagging is what publishes. Pushing 0.0.1, or v0.0.1, builds that commit and attaches the
+# executables to a GitHub release of the same name. Both spellings work, because having to
+# remember which one the workflow wanted is how the first release failed to build.
 on:
   push:
     tags:
-      - "v*"
+      - "v[0-9]*"
+      - "[0-9]*"
 
 permissions:
   contents: read

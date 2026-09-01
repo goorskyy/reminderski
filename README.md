@@ -27,7 +27,7 @@ choose Quit.
 
 It does not start with Windows, so run it again after a restart.
 
-Releases are cut by tagging: pushing a tag such as `v0.0.1` builds that commit and attaches the
+Releases are cut by tagging: pushing a tag such as `0.0.1` builds that commit and attaches the
 executables to a GitHub release of the same name.
 
 ## Building
