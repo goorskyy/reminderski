@@ -114,8 +114,8 @@ A user can create a reminder, wait for it, receive it, complete it, or snooze it
 
 ## M5 — Visual Design
 
-**Status: built, not settled.** Both windows are drawn to the agreed design. Tuning them is
-deferred, so this stays open until the human is happy with how they look.
+**Status: done.** Both windows are drawn to the agreed design. Further tuning, and giving the
+character more life, are picked up later as features rather than held open here.
 
 **Goal:** Settle how Reminderski looks, before there is more of it to redo.
 

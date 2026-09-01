@@ -28,3 +28,5 @@ Nothing in this file is approved work unless explicitly moved into a milestone.
 | 20 | Configurable shortcut | Low | Let the user change the global capture shortcut, which is fixed at Ctrl+Alt+R. |
 | 21 | Persona reacts to your habits | Medium | Let the character's expression and remarks follow the stored history, such as how often reminders are snoozed or left unanswered. |
 | 22 | winget package | Medium | Publish a winget manifest so Reminderski can be installed with `winget install`, pointing at the GitHub release. |
+| 23 | Give the character more life | Medium | The persona is readable but flat. Richer ASCII, more moods, and reactions to what is happening. |
+| 24 | Tune the two windows | Low | Spacing, proportions and weight across the form and the notification, once they have been lived with. |
