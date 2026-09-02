@@ -56,6 +56,11 @@ cargo fmt --check
 cargo clippy --all-targets
 ```
 
+A debug build has one extra key. Click a notification, then press **M** to step the character
+through every mood in turn and then back to following the reminder's own history. The title bar
+names the mood being held. Reaching the worst of them for real takes six snoozes, which is no way
+to look at a drawing. The key is compiled out of a release build.
+
 ## Time expressions
 
 Relative: `in 40m`, `40m`, `1h30m`, `2 days 3 hours`. The leading `in` is optional.

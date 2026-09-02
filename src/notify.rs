@@ -102,6 +102,10 @@ struct State {
     opened: Instant,
     outcome: Cell<Outcome>,
     mood: Cell<Mood>,
+    /// Held at one mood instead of following the reminder's history. Only the mood key in a
+    /// debug build ever sets it, so in a release build this stays None for the life of the
+    /// window and the character behaves as it should.
+    forced_mood: Cell<Option<Mood>>,
     frame: Cell<usize>,
     hovered: Cell<Option<usize>>,
     pressed: Cell<Option<usize>>,
@@ -230,6 +234,7 @@ impl State {
             // Ignoring the window is the same as pressing the first snooze.
             outcome: Cell::new(Outcome::Later(Duration::from_secs(30 * 60))),
             mood: Cell::new(persona::mood(snoozes, Duration::ZERO)),
+            forced_mood: Cell::new(None),
             frame: Cell::new(0),
             hovered: Cell::new(None),
             pressed: Cell::new(None),
@@ -241,7 +246,10 @@ impl State {
 
     /// Advances the character and asks to be woken when its current frame runs out.
     fn schedule_next_frame(&self, window: HWND) {
-        let wanted = persona::mood(self.snoozes, self.opened.elapsed());
+        let wanted = self
+            .forced_mood
+            .get()
+            .unwrap_or_else(|| persona::mood(self.snoozes, self.opened.elapsed()));
         if wanted != self.mood.get() {
             self.mood.set(wanted);
             self.frame.set(0);
@@ -517,6 +525,11 @@ unsafe extern "system" fn window_proc(
                 }
                 // 1, 2 and 3 pick the snoozes from the left.
                 key @ (0x31..=0x33) => answer(window, state, key as usize - 0x31),
+                // M steps the character through every mood and then hands it back to the
+                // history. Debug builds only: reaching Angry for real takes six snoozes, which
+                // is no way to look at a drawing.
+                #[cfg(debug_assertions)]
+                0x4d => force_next_mood(window, state),
                 _ => {}
             }
             0
@@ -548,6 +561,20 @@ fn answer(window: HWND, state: &State, index: usize) {
         KillTimer(window, ANIMATION_TIMER);
         DestroyWindow(window);
     }
+}
+
+/// Walks the character on one mood, and off the end back to following the reminder's history.
+/// The title bar says which one is being held, since two of them stare and only the blinking
+/// tells them apart.
+#[cfg(debug_assertions)]
+fn force_next_mood(window: HWND, state: &State) {
+    state.forced_mood.set(match state.forced_mood.get() {
+        None => Some(Mood::Idle),
+        Some(Mood::Angry) => None,
+        Some(mood) => Some(mood.next()),
+    });
+    state.schedule_next_frame(window);
+    unsafe { InvalidateRect(window, ptr::null(), 0) };
 }
 
 /// Asks for one WM_MOUSELEAVE, so a button does not stay lit after the pointer goes.
@@ -584,10 +611,14 @@ fn paint(window: HWND, state: &State, layout: &Layout) {
 
     fill(buffer, &layout.titlebar, BAR);
     let title_text = inset(&layout.titlebar, scale(14, state.dpi), 0);
+    let title = match state.forced_mood.get() {
+        Some(mood) => wide(&format!("{TITLE}  [{}]", mood.name())),
+        None => wide(TITLE),
+    };
     draw_text(
         buffer,
         &title_text,
-        &wide(TITLE),
+        &title,
         state.fonts.title,
         BAR_INK,
         TITLE_TRACKING,
