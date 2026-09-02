@@ -10,7 +10,7 @@ These rules are mandatory unless explicitly overridden by the human.
 
 ### 2. Small increments
 
-Work only on the current task/milestone.
+Work only on the current task.
 
 Implement the smallest solution that satisfies the requirements. Do not implement speculative features, future architecture, or unrelated improvements.
 

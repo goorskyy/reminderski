@@ -75,6 +75,6 @@ nothing has gone wrong.
 
 Early development.
 
-The current execution plan is defined in `MILESTONE.md`.
+Known problems are listed in `docs/known-problems.md`.
 
 Future ideas are kept in `FEATURES.md`.

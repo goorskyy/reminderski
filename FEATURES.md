@@ -2,7 +2,7 @@
 
 Ideas and potential future features for Reminderski.
 
-Nothing in this file is approved work unless explicitly moved into a milestone.
+Nothing in this file is approved work until it is picked.
 
 | # | Feature | Effort | Description |
 |---|---|---|---|
