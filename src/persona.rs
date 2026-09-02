@@ -1,25 +1,94 @@
-//! The character on a notification: a few lines of text, animated by swapping frames.
+//! The character on a notification: a note pinned to the screen, animated by swapping frames.
 //!
-//! Every frame is the same width and height, so redrawing one never moves anything around it.
-//! The body is one shape and only the eyes, mouth and feet change, which is what makes adding
-//! an expression cheap.
+//! Every frame is the same rectangle of characters, so redrawing one never moves anything around
+//! it. The note itself never changes. Only the brows, the eyes and the mouth differ, which is
+//! what makes a new expression cost three names rather than a new drawing.
+//!
+//! The brows are blank at rest, so a settled note carries only eyes and a mouth. That is
+//! deliberate: a face that has been level all along and then draws its brows together says
+//! something a permanently drawn brow cannot.
 
 use std::time::Duration;
 
-/// Assembles a frame from the three parts that ever differ.
-macro_rules! character {
-    ($eyes:expr, $mouth:expr, $feet:expr) => {
-        concat!(
-            " .-----.\n | ",
-            $eyes,
-            " |\n |  ",
-            $mouth,
-            "  |\n '-----'\n  ",
-            $feet
-        )
+// The three parts that ever differ. Each is nine characters wide and sits in the same nine
+// columns of the note, so the eyes line up under the brows and over the mouth by construction.
+//
+// These are macros rather than constants because `concat!` takes literals, and assembling the
+// frames at compile time is what keeps a frame a `&'static str`.
+
+macro_rules! brows {
+    (level) => {
+        "         "
     };
-    ($eyes:expr, $mouth:expr) => {
-        character!($eyes, $mouth, "/   \\")
+    (raised) => {
+        "  ^   ^  "
+    };
+    (cocked) => {
+        "  ^   _  "
+    };
+    (drawn) => {
+        "  \\   /  "
+    };
+    (tired) => {
+        "  ~   ~  "
+    };
+}
+
+macro_rules! eyes {
+    (open) => {
+        "  o   o  "
+    };
+    (shut) => {
+        "  -   -  "
+    };
+    (wide) => {
+        "  O   O  "
+    };
+    (huge) => {
+        "  @   @  "
+    };
+    // One column off centre reads as a glance, two as the head turning.
+    (left) => {
+        " o   o   "
+    };
+    (right) => {
+        "   o   o "
+    };
+    (turned_left) => {
+        "o   o    "
+    };
+    (turned_right) => {
+        "    o   o"
+    };
+}
+
+macro_rules! mouth {
+    (flat) => {
+        "    -    "
+    };
+    (small) => {
+        "    .    "
+    };
+    (open) => {
+        "   ___   "
+    };
+    (grim) => {
+        "   ---   "
+    };
+}
+
+/// Assembles a frame: a pinned note with the three parts dropped into it.
+macro_rules! note {
+    ($brows:ident, $eyes:ident, $mouth:ident) => {
+        concat!(
+            "     (o)     \n,-----------,\n| ",
+            brows!($brows),
+            " |\n| ",
+            eyes!($eyes),
+            " |\n| ",
+            mouth!($mouth),
+            " |\n'~v~v~v~v~v~'"
+        )
     };
 }
 
@@ -30,7 +99,7 @@ pub struct Frame {
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Mood {
-    /// Nothing has happened yet: blinks and looks about.
+    /// Nothing has happened yet: blinks, glances about, and now and then turns to look.
     Idle,
     /// Already pushed back at least once: heavy lidded.
     Waiting,
@@ -39,29 +108,33 @@ pub enum Mood {
 }
 
 const IDLE: &[Frame] = &[
-    frame(character!("o o", "-"), 2600),
-    frame(character!("- -", "-"), 130),
-    frame(character!("o o", "-"), 300),
-    frame(character!("- -", "-"), 130),
-    frame(character!("o o", "-"), 2000),
-    frame(character!("oo ", "-"), 900),
-    frame(character!("o o", "-"), 700),
-    frame(character!(" oo", "-"), 900),
-    frame(character!("o o", "-"), 1600),
+    frame(note!(level, open, flat), 2600),
+    frame(note!(level, shut, flat), 130),
+    frame(note!(level, open, flat), 300),
+    frame(note!(level, shut, flat), 130),
+    frame(note!(level, open, flat), 2000),
+    frame(note!(level, left, flat), 900),
+    frame(note!(level, turned_left, flat), 1300),
+    frame(note!(raised, turned_left, small), 700),
+    frame(note!(level, open, flat), 1500),
+    frame(note!(level, shut, flat), 130),
+    frame(note!(level, open, flat), 1800),
+    frame(note!(level, right, flat), 900),
+    frame(note!(level, turned_right, flat), 1300),
+    frame(note!(cocked, turned_right, small), 800),
 ];
 
 const WAITING: &[Frame] = &[
-    frame(character!("- -", "."), 1700),
-    frame(character!("o o", "."), 500),
-    frame(character!("- -", "."), 2400),
-    frame(character!("- -", "_"), 900),
+    frame(note!(tired, shut, small), 1700),
+    frame(note!(tired, open, small), 500),
+    frame(note!(tired, shut, small), 2400),
+    frame(note!(tired, shut, open), 900),
 ];
 
 const IGNORED: &[Frame] = &[
-    frame(character!("O O", "_"), 3800),
-    frame(character!("O O", "_", "\\   /"), 200),
-    frame(character!("o o", "_"), 260),
-    frame(character!("O O", "_"), 3000),
+    frame(note!(drawn, wide, grim), 3800),
+    frame(note!(drawn, huge, open), 220),
+    frame(note!(drawn, wide, open), 300),
 ];
 
 const fn frame(art: &'static str, millis: u64) -> Frame {
@@ -94,22 +167,36 @@ const STARE_AFTER: Duration = Duration::from_secs(25);
 mod tests {
     use super::*;
 
-    /// The shape every frame has to keep, so a redraw never moves anything.
-    const LINES: usize = 5;
-    const COLUMNS: usize = 9;
+    /// The rectangle every frame has to fill, so a redraw never moves anything. Every line is
+    /// exactly this wide: the note is drawn as a block, and a short line would centre itself
+    /// against the others and shift the drawing.
+    const LINES: usize = 6;
+    const COLUMNS: usize = 13;
 
     #[test]
-    fn every_frame_is_the_same_shape() {
+    fn every_frame_is_the_same_rectangle() {
         for mood in [Mood::Idle, Mood::Waiting, Mood::Ignored] {
             for frame in frames(mood) {
                 let lines: Vec<&str> = frame.art.lines().collect();
                 assert_eq!(lines.len(), LINES, "{}", frame.art);
                 for line in lines {
-                    assert!(
-                        line.chars().count() <= COLUMNS,
-                        "{line:?} is wider than {COLUMNS} columns"
+                    assert_eq!(
+                        line.chars().count(),
+                        COLUMNS,
+                        "{line:?} is not {COLUMNS} columns"
                     );
                 }
+            }
+        }
+    }
+
+    /// Nothing outside Consolas: a glyph it lacks is fetched from another font and then measured
+    /// at a width it is not drawn at, which is what pushed the tick off the Done button.
+    #[test]
+    fn every_frame_is_plain_ascii() {
+        for mood in [Mood::Idle, Mood::Waiting, Mood::Ignored] {
+            for frame in frames(mood) {
+                assert!(frame.art.is_ascii(), "{}", frame.art);
             }
         }
     }
@@ -120,6 +207,22 @@ mod tests {
             let frames = frames(mood);
             assert!(frames.len() > 1);
             assert!(frames.iter().all(|frame| frame.millis > 0));
+        }
+    }
+
+    /// A frame that repeats the one before it is a redraw that changes nothing.
+    #[test]
+    fn no_frame_repeats_the_one_before_it() {
+        for mood in [Mood::Idle, Mood::Waiting, Mood::Ignored] {
+            let frames = frames(mood);
+            for pair in frames.windows(2) {
+                assert_ne!(pair[0].art, pair[1].art);
+            }
+            assert_ne!(
+                frames[frames.len() - 1].art,
+                frames[0].art,
+                "the loop repeats where it wraps"
+            );
         }
     }
 

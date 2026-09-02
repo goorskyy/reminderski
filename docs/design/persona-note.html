@@ -1,0 +1,907 @@
+<title>Reminderski Note Studies</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&display=swap">
+<style>
+  /* Page surround: follows the viewer's theme. The specimens and the window replica below do
+     not — that palette is the application, and it is the same in every theme. */
+  :root {
+    --page-ground: #e6e5e0;
+    --page-ink: #16150f;
+    --page-muted: #6f6d63;
+    --page-rule: #c9c7bd;
+    --page-veil: rgba(230, 229, 224, 0.94);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --page-ground: #16150f;
+      --page-ink: #edece5;
+      --page-muted: #918e83;
+      --page-rule: #34322a;
+      --page-veil: rgba(22, 21, 15, 0.94);
+    }
+  }
+  :root[data-theme="dark"] {
+    --page-ground: #16150f;
+    --page-ink: #edece5;
+    --page-muted: #918e83;
+    --page-rule: #34322a;
+    --page-veil: rgba(22, 21, 15, 0.94);
+  }
+
+  /* The application's own palette, from src/ui.rs. */
+  :root {
+    --ink: #0d0d0b;
+    --paper: #ffffff;
+    --label: #8b897f;
+    --bar: #0a0a08;
+    --bar-ink: #f2f1ea;
+    --edge: #b9b7ae;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--page-ground);
+    color: var(--page-ink);
+    font-family: Consolas, "JetBrains Mono", ui-monospace, "DejaVu Sans Mono", monospace;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .sheet {
+    max-width: 1120px;
+    margin: 0 auto;
+    padding: 40px 24px 72px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  header { display: flex; flex-direction: column; gap: 12px; }
+  h1 {
+    margin: 0;
+    font-size: 19px;
+    font-weight: 700;
+    letter-spacing: 0.24em;
+    text-transform: uppercase;
+    text-wrap: balance;
+  }
+  .standfirst {
+    margin: 0;
+    max-width: 68ch;
+    font-size: 13px;
+    line-height: 1.75;
+    color: var(--page-muted);
+  }
+  .standfirst b { color: var(--page-ink); font-weight: 500; }
+
+  h2 {
+    margin: 0;
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: var(--page-muted);
+  }
+  h3 {
+    margin: 0;
+    font-size: 15px;
+    font-weight: 700;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+  }
+
+  .part {
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+    padding: 34px 0;
+    border-top: 1px solid var(--page-rule);
+  }
+  .part header { gap: 8px; }
+
+  /* ---- the sticky mood strip ---- */
+
+  .strip {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    background: var(--page-veil);
+    backdrop-filter: blur(6px);
+    padding: 14px 0 12px;
+    margin-top: 20px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+    border-bottom: 1px solid var(--page-rule);
+  }
+  .pill {
+    font: inherit;
+    font-size: 10.5px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    padding: 6px 11px;
+    border: 1px solid var(--page-rule);
+    border-radius: 999px;
+    background: transparent;
+    color: var(--page-muted);
+    cursor: pointer;
+  }
+  .pill:hover { color: var(--page-ink); border-color: var(--page-ink); }
+  .pill[aria-pressed="true"] {
+    background: var(--page-ink);
+    border-color: var(--page-ink);
+    color: var(--page-ground);
+  }
+  .pill:focus-visible { outline: 2px solid var(--page-ink); outline-offset: 2px; }
+  .strip .aside { font-size: 11px; color: var(--page-muted); letter-spacing: 0.04em; }
+
+  /* ---- specimens ---- */
+
+  .row {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(184px, 1fr));
+    gap: 28px 22px;
+  }
+  .specimen {
+    font: inherit;
+    background: transparent;
+    border: 0;
+    padding: 0;
+    color: inherit;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    align-items: flex-start;
+    cursor: pointer;
+    text-align: left;
+  }
+  .specimen:focus-visible { outline: 2px solid var(--page-ink); outline-offset: 4px; }
+
+  /* The face box exactly as the notification draws it: 152 logical pixels, hairline, on paper. */
+  .face {
+    width: 152px;
+    height: 152px;
+    border: 1px solid var(--ink);
+    background: var(--paper);
+    color: var(--ink);
+    display: grid;
+    place-items: center;
+    white-space: pre;
+    text-align: center;
+    line-height: 1.15;
+    overflow: hidden;
+  }
+  .specimen:hover .face { box-shadow: 0 0 0 3px var(--page-rule); }
+
+  .name {
+    font-size: 11px;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    padding: 3px 7px;
+    margin-left: -7px;
+  }
+  .specimen[aria-pressed="true"] .name { background: var(--page-ink); color: var(--page-ground); }
+  .meta {
+    font-size: 11px;
+    line-height: 1.65;
+    color: var(--page-muted);
+    font-variant-numeric: tabular-nums;
+  }
+  .meta em { font-style: normal; color: var(--page-ink); }
+
+  /* ---- the movement audit ---- */
+
+  .audits {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(184px, 1fr));
+    gap: 24px 22px;
+  }
+  .audit { display: flex; flex-direction: column; gap: 10px; }
+  .audit .face { cursor: default; }
+  .audit .fixed { color: var(--label); }
+  .audit .moves { color: var(--ink); }
+  .tally {
+    font-size: 11px;
+    line-height: 1.65;
+    color: var(--page-muted);
+    font-variant-numeric: tabular-nums;
+  }
+  .tally b { color: var(--page-ink); font-weight: 700; }
+
+  .key { display: flex; flex-wrap: wrap; gap: 18px; align-items: center; font-size: 11px; color: var(--page-muted); }
+  .key span { display: flex; align-items: center; gap: 7px; }
+  .key i {
+    font-style: normal;
+    width: 26px;
+    text-align: center;
+    background: var(--paper);
+    border: 1px solid var(--edge);
+  }
+  .key i.fixed { color: var(--label); }
+  .key i.moves { color: var(--ink); }
+
+  /* ---- the window replica ---- */
+
+  .window {
+    width: 520px;
+    max-width: 100%;
+    background: var(--paper);
+    border: 1px solid var(--edge);
+    color: var(--ink);
+    font-size: 14px;
+  }
+  .titlebar {
+    height: 34px;
+    background: var(--bar);
+    color: var(--bar-ink);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 14px;
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 0.22em;
+  }
+  .titlebar .close { letter-spacing: 0.06em; }
+  .window .body { padding: 18px; display: flex; flex-direction: column; gap: 16px; }
+  .window .top { display: flex; gap: 18px; }
+  .window .face { flex: none; }
+  .message { display: flex; flex-direction: column; gap: 10px; }
+  .eyebrow {
+    font-size: 11px;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: var(--label);
+  }
+  .message p { margin: 0; font-size: 17px; line-height: 1.5; text-wrap: balance; }
+
+  .snoozes { display: flex; gap: 10px; }
+  .action {
+    height: 44px;
+    flex: 1;
+    padding: 0 6px;
+    font: inherit;
+    font-size: 12px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    background: transparent;
+    border: 1px solid var(--ink);
+    border-radius: 0;
+    color: var(--ink);
+    cursor: pointer;
+  }
+  .action:hover { background: #f0efea; }
+  .action.filled {
+    flex: 0 0 118px;
+    background: var(--ink);
+    border-color: var(--ink);
+    color: var(--paper);
+    font-weight: 700;
+  }
+  .action.filled:hover { background: #26261f; }
+  .action:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+
+  .inplace { display: flex; flex-wrap: wrap; gap: 34px; align-items: flex-start; }
+  .verdict { display: flex; flex-direction: column; gap: 12px; max-width: 42ch; }
+  .verdict p { margin: 0; font-size: 12.5px; line-height: 1.7; color: var(--page-muted); }
+  .verdict p b { color: var(--page-ink); font-weight: 500; }
+
+  /* ---- notes ---- */
+
+  .notes {
+    border-top: 1px solid var(--page-rule);
+    padding-top: 30px;
+    margin-top: 24px;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: 30px;
+  }
+  .note { display: flex; flex-direction: column; gap: 10px; }
+  .note ul { margin: 0; padding-left: 17px; display: flex; flex-direction: column; gap: 8px; }
+  .note li { font-size: 12.5px; line-height: 1.65; }
+  .note li b { font-weight: 700; }
+  .note code {
+    font: inherit;
+    font-size: 12px;
+    background: var(--page-rule);
+    padding: 0 4px;
+  }
+
+  @media (max-width: 640px) {
+    .sheet { padding: 24px 14px 48px; }
+    .snoozes { flex-wrap: wrap; }
+    .action.filled { flex: 1 0 118px; }
+  }
+</style>
+
+<div class="sheet">
+  <header>
+    <h1>Reminderski &mdash; the note</h1>
+    <p class="standfirst">
+      You described the trade as brows against calm. I do not think that is the trade. The Pad is
+      busier than the Pinned for three reasons, and <b>only one of them is the brows</b>: it also
+      has a torn top edge, a second sheet showing underneath, and a bottom edge that jitters
+      between frames. The section below counts exactly what moves in each, and the tries after it
+      keep the expression range while taking the noise back out.
+    </p>
+  </header>
+
+  <div class="strip">
+    <button class="pill mood-pick" type="button" data-mood="idle" aria-pressed="true">Idle</button>
+    <button class="pill mood-pick" type="button" data-mood="looking" aria-pressed="false">Looking around</button>
+    <button class="pill mood-pick" type="button" data-mood="waiting" aria-pressed="false">Waiting</button>
+    <button class="pill mood-pick" type="button" data-mood="ignored" aria-pressed="false">Ignored</button>
+    <button class="pill mood-pick" type="button" data-mood="done" aria-pressed="false">Done</button>
+    <span class="aside">&nbsp;&mdash; click any specimen to drop it into the notification at the bottom.</span>
+  </div>
+
+  <section class="part">
+    <header>
+      <h3>Where you are</h3>
+      <p class="standfirst">
+        The two from round two, unchanged, for reference. Run them through <b>Ignored</b> and
+        watch the bottom edge rather than the face.
+      </p>
+    </header>
+    <div class="row" data-group="where"></div>
+  </section>
+
+  <section class="part">
+    <header>
+      <h3>What actually moves</h3>
+      <p class="standfirst">
+        Every character that is ever different between two frames, in ink; every character that is
+        the same in all of them, in grey. This is the drawing that earns its place against the
+        drawing you are paying for and never see change.
+      </p>
+      <div class="key">
+        <span><i class="moves">o</i> moves between frames</span>
+        <span><i class="fixed">-</i> never changes</span>
+      </div>
+    </header>
+    <div class="audits" id="audits"></div>
+  </section>
+
+  <section class="part">
+    <header>
+      <h3>Six tries</h3>
+      <p class="standfirst">
+        A progression, each adding one thing to the one before. <b>Heavy</b> is simply Pad's brows
+        on Pinned's body. <b>Light</b> swaps the resting brow from <code>_</code> to
+        <code>-</code>, which lifts it off the eye instead of sitting on it. <b>Quiet</b> leaves
+        the brow row blank until there is something to express, so at rest it is exactly the
+        Pinned face and the brows only arrive with a mood. <b>Still</b> stops the bottom edge
+        jittering. <b>Full size</b> grows the note to thirteen columns, which buys the head-turn
+        from the big face. <b>Calm pad</b> keeps your second sheet but drops the torn top.
+      </p>
+    </header>
+    <div class="row" data-group="tries"></div>
+  </section>
+
+  <section class="part">
+    <header>
+      <h3>In place</h3>
+    </header>
+    <div class="inplace">
+      <div class="window">
+        <div class="titlebar"><span>REMINDERSKI !!</span><span class="close">[X]</span></div>
+        <div class="body">
+          <div class="top">
+            <div class="face" id="stage" role="img" aria-label="Reminderski"></div>
+            <div class="message">
+              <span class="eyebrow" id="eyebrow">Excuse me... but:</span>
+              <p>talk to Michal about weird commit validation</p>
+            </div>
+          </div>
+          <div class="snoozes">
+            <button class="action" type="button">+30 min</button>
+            <button class="action" type="button">+2 hrs</button>
+            <button class="action" type="button">Tomorrow</button>
+            <button class="action filled" type="button">Done</button>
+          </div>
+        </div>
+      </div>
+      <div class="verdict">
+        <h2>Where I would land</h2>
+        <p><b>Full size.</b> It is Pinned at rest &mdash; same calm, same two features, nothing
+          extra in the frame &mdash; and it has Pad's whole range waiting behind it. The brows
+          only appear when the mood is not neutral, which means they read as an event rather than
+          as decoration. At thirteen columns it also fills the box properly and gets the eyes far
+          enough apart to turn, not just glance.</p>
+        <p><b>If thirteen columns is too much note,</b> take <b>Quiet</b> or <b>Still</b>. They
+          are the same idea at eleven columns; you lose the head-turn and keep everything else.</p>
+        <p><b>The one thing I would not keep</b> is the jittering bottom edge. It is on Pinned
+          too. It costs nine characters of movement every few seconds to say nothing, and it is
+          most of why Pad reads as restless.</p>
+      </div>
+    </div>
+  </section>
+
+  <div class="notes">
+    <div class="note">
+      <h2>The quiet brow, in one line</h2>
+      <ul>
+        <li>The brow row is <b>always there</b> &mdash; the rectangle never changes size. It is
+          simply blank in the neutral mood.</li>
+        <li>So the cost of brows at rest is <b>nothing</b>: same face as Pinned, same calm.</li>
+        <li>And the arrival of a brow is itself a signal. A face that has been level all evening
+          and then draws its brows together is doing something a permanent brow cannot.</li>
+      </ul>
+    </div>
+    <div class="note">
+      <h2>Also tried, not shown</h2>
+      <ul>
+        <li>A smaller fixing than <code>(o)</code> &mdash; a bare <code>o</code>, or nothing at
+          all. Quieter, but the pin is a good part of why the note reads as a note. Say the word
+          and I will put it up.</li>
+        <li>Brows below the eyes as a squint. Reads as a second mouth. No.</li>
+        <li>Writing under the face, as in Ruled. It fights the reminder text sitting right beside
+          the box, which says the same thing properly.</li>
+      </ul>
+    </div>
+    <div class="note">
+      <h2>What I need from you</h2>
+      <ul>
+        <li>One name, and whether the <b>pin</b> stays as <code>(o)</code>.</li>
+        <li>Whether the bottom edge should be <b>still</b>, or whether the jitter is something you
+          actually like.</li>
+        <li>Then I redraw it into <code>persona.rs</code> and we do the behaviour rules
+          separately.</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<script>
+  // One shared script drives every specimen, so at any moment they are all wearing the same
+  // expression and the only variable on the page is the drawing.
+  (function () {
+    var SCRIPT = {
+      idle: [
+        ["flat", "open", "flat", 0, 2600],
+        ["flat", "shut", "flat", 0, 130],
+        ["flat", "open", "flat", 0, 300],
+        ["flat", "shut", "flat", 0, 130],
+        ["flat", "open", "flat", 0, 2000],
+        ["flat", "lookL", "flat", 0, 900],
+        ["flat", "open", "flat", 0, 700],
+        ["flat", "lookR", "flat", 0, 900],
+        ["flat", "open", "flat", 0, 1600]
+      ],
+      looking: [
+        ["flat", "open", "flat", 0, 1100],
+        ["flat", "lookL", "flat", 0, 500],
+        ["flat", "turnL", "flat", 0, 1300],
+        ["up", "turnL", "small", 0, 700],
+        ["flat", "open", "flat", 0, 800],
+        ["flat", "lookR", "flat", 0, 500],
+        ["flat", "turnR", "flat", 0, 1300],
+        ["quiz", "turnR", "small", 0, 800],
+        ["flat", "open", "flat", 0, 1000]
+      ],
+      waiting: [
+        ["tired", "shut", "small", 0, 1700],
+        ["tired", "open", "small", 0, 500],
+        ["tired", "shut", "small", 0, 2400],
+        ["tired", "shut", "open", 1, 900]
+      ],
+      ignored: [
+        ["cross", "wide", "grim", 0, 3600],
+        ["cross", "huge", "open", 1, 220],
+        ["cross", "wide", "grim", 0, 300],
+        ["cross", "wide", "grim", 0, 2800]
+      ],
+      done: [
+        ["up", "happy", "smile", 0, 900],
+        ["up", "shut", "smile", 0, 160],
+        ["up", "happy", "smile", 0, 2200],
+        ["up", "happy", "smile", 1, 380]
+      ]
+    };
+
+    var CHAIN = {
+      brows: {
+        flat: ["flat"],
+        up: ["up", "flat"],
+        quiz: ["quiz", "up", "flat"],
+        cross: ["cross", "flat"],
+        worried: ["worried", "flat"],
+        tired: ["tired", "flat"],
+        none: ["none", "flat"]
+      },
+      eyes: {
+        open: ["open"],
+        shut: ["shut", "open"],
+        wide: ["wide", "open"],
+        huge: ["huge", "wide", "open"],
+        small: ["small", "open"],
+        happy: ["happy", "open"],
+        lookL: ["lookL", "open"],
+        lookR: ["lookR", "open"],
+        turnL: ["turnL", "lookL", "open"],
+        turnR: ["turnR", "lookR", "open"]
+      },
+      mouths: {
+        flat: ["flat"],
+        small: ["small", "flat"],
+        open: ["open", "flat"],
+        smile: ["smile", "flat"],
+        grim: ["grim", "flat"]
+      }
+    };
+
+    function pick(map, kind, key) {
+      if (!map) return "";
+      var chain = CHAIN[kind][key] || [key];
+      for (var i = 0; i < chain.length; i += 1) {
+        if (map[chain[i]] !== undefined) return map[chain[i]];
+      }
+      return map.open !== undefined ? map.open : "";
+    }
+
+    // --- seven columns: eyes at 1 and 5 ---
+
+    // What Pad has. The underscore sits on the bottom of its cell, hard against the eye below.
+    var BROWS_HEAVY = {
+      flat: " _   _ ", up: " ^   ^ ", quiz: " ^   _ ",
+      cross: " \\   / ", worried: " /   \\ ", tired: " ~   ~ ", none: "       "
+    };
+    // The same brow lifted to the middle of its cell, which puts air between it and the eye.
+    var BROWS_LIGHT = {
+      flat: " -   - ", up: " ^   ^ ", quiz: " ^   - ",
+      cross: " \\   / ", worried: " /   \\ ", tired: " ~   ~ ", none: "       "
+    };
+    // Blank until there is something to express. At rest this is exactly the Pinned face.
+    var BROWS_QUIET = {
+      flat: "       ", up: " ^   ^ ", quiz: " ^   _ ",
+      cross: " \\   / ", worried: " /   \\ ", tired: " ~   ~ ", none: "       "
+    };
+    var EYES7 = {
+      open: " o   o ", shut: " -   - ", wide: " O   O ", huge: " @   @ ",
+      small: " .   . ", happy: " ^   ^ ", lookL: "o   o  ", lookR: "  o   o"
+    };
+    var MOUTHS7 = {
+      flat: "   -   ", small: "   .   ", open: "  ___  ", smile: " \\___/ ", grim: "  ---  "
+    };
+
+    // --- nine columns: eyes at 2 and 6, far enough apart to turn rather than glance ---
+
+    var BROWS_QUIET9 = {
+      flat: "         ", up: "  ^   ^  ", quiz: "  ^   _  ",
+      cross: "  \\   /  ", worried: "  /   \\  ", tired: "  ~   ~  ", none: "         "
+    };
+    var EYES9 = {
+      open: "  o   o  ", shut: "  -   -  ", wide: "  O   O  ", huge: "  @   @  ",
+      small: "  .   .  ", happy: "  ^   ^  ",
+      lookL: " o   o   ", lookR: "   o   o ", turnL: "o   o    ", turnR: "    o   o"
+    };
+    var MOUTHS9 = {
+      flat: "    -    ", small: "    .    ", open: "   ___   ",
+      smile: "  \\___/  ", grim: "   ---   "
+    };
+
+    var TORN = "~v~v~v~v~";
+    var TORN_SHIFTED = "v~v~v~v~v";
+
+    var CANDIDATES = [
+      {
+        group: "where",
+        name: "Pinned",
+        size: 17,
+        grid: "11 × 5",
+        note: "Round two. Calm, but no brows — four expressions in total.",
+        eyes: EYES7, mouths: MOUTHS7,
+        draw: function (b, e, m, pose) {
+          return "    (o)    \n" +
+                 ",---------,\n" +
+                 "| " + e + " |\n" +
+                 "| " + m + " |\n" +
+                 "'" + (pose ? TORN_SHIFTED : TORN) + "'";
+        }
+      },
+      {
+        group: "where",
+        name: "Pad",
+        size: 16,
+        grid: "11 × 6",
+        note: "Round two. The full range, and three separate sources of restlessness.",
+        brows: BROWS_HEAVY, eyes: EYES7, mouths: MOUTHS7,
+        draw: function (b, e, m, pose) {
+          return "^~^~^~^~^~^\n" +
+                 "| " + b + " |\n" +
+                 "| " + e + " |\n" +
+                 "| " + m + " |\n" +
+                 "'" + (pose ? TORN_SHIFTED : TORN) + "'\n" +
+                 " '-------' ";
+        }
+      },
+
+      {
+        group: "tries",
+        name: "Heavy",
+        size: 16,
+        grid: "11 × 6",
+        note: "Pad's brows on Pinned's body. Isolates the brows from everything else Pad added.",
+        brows: BROWS_HEAVY, eyes: EYES7, mouths: MOUTHS7,
+        draw: function (b, e, m, pose) {
+          return "    (o)    \n" +
+                 ",---------,\n" +
+                 "| " + b + " |\n" +
+                 "| " + e + " |\n" +
+                 "| " + m + " |\n" +
+                 "'" + (pose ? TORN_SHIFTED : TORN) + "'";
+        }
+      },
+      {
+        group: "tries",
+        name: "Light",
+        size: 16,
+        grid: "11 × 6",
+        note: "The resting brow moved off the eye: - instead of _. Same range, less weight.",
+        brows: BROWS_LIGHT, eyes: EYES7, mouths: MOUTHS7,
+        draw: function (b, e, m, pose) {
+          return "    (o)    \n" +
+                 ",---------,\n" +
+                 "| " + b + " |\n" +
+                 "| " + e + " |\n" +
+                 "| " + m + " |\n" +
+                 "'" + (pose ? TORN_SHIFTED : TORN) + "'";
+        }
+      },
+      {
+        group: "tries",
+        name: "Quiet",
+        size: 16,
+        grid: "11 × 6",
+        note: "No brow at rest at all. Identical to Pinned until a mood needs one.",
+        brows: BROWS_QUIET, eyes: EYES7, mouths: MOUTHS7,
+        draw: function (b, e, m, pose) {
+          return "    (o)    \n" +
+                 ",---------,\n" +
+                 "| " + b + " |\n" +
+                 "| " + e + " |\n" +
+                 "| " + m + " |\n" +
+                 "'" + (pose ? TORN_SHIFTED : TORN) + "'";
+        }
+      },
+      {
+        group: "tries",
+        name: "Still",
+        size: 16,
+        grid: "11 × 6",
+        note: "Quiet brows, and the torn bottom edge stops moving. Only the face animates now.",
+        brows: BROWS_QUIET, eyes: EYES7, mouths: MOUTHS7,
+        draw: function (b, e, m) {
+          return "    (o)    \n" +
+                 ",---------,\n" +
+                 "| " + b + " |\n" +
+                 "| " + e + " |\n" +
+                 "| " + m + " |\n" +
+                 "'" + TORN + "'";
+        }
+      },
+      {
+        group: "tries",
+        name: "Full size",
+        size: 15,
+        grid: "13 × 6",
+        note: "Still, grown to thirteen columns. The eyes are now far enough apart to turn.",
+        brows: BROWS_QUIET9, eyes: EYES9, mouths: MOUTHS9,
+        draw: function (b, e, m) {
+          return "     (o)     \n" +
+                 ",-----------,\n" +
+                 "| " + b + " |\n" +
+                 "| " + e + " |\n" +
+                 "| " + m + " |\n" +
+                 "'~v~v~v~v~v~'";
+        }
+      },
+      {
+        group: "tries",
+        name: "Calm pad",
+        size: 16,
+        grid: "11 × 6",
+        note: "Your second sheet kept, torn top dropped, quiet brows, still edge.",
+        brows: BROWS_QUIET, eyes: EYES7, mouths: MOUTHS7,
+        draw: function (b, e, m) {
+          return ",---------,\n" +
+                 "| " + b + " |\n" +
+                 "| " + e + " |\n" +
+                 "| " + m + " |\n" +
+                 "'" + TORN + "'\n" +
+                 " '-------' ";
+        }
+      }
+    ];
+
+    // The four worth counting: the two you are between, and the two that answer them.
+    var AUDITED = ["Pinned", "Pad", "Quiet", "Full size"];
+
+    var LABELS = {
+      idle: "idling",
+      looking: "looking around",
+      waiting: "waiting",
+      ignored: "staring at you",
+      done: "pleased"
+    };
+    var EYEBROWS = {
+      idle: "Excuse me... but:",
+      looking: "Excuse me... but:",
+      waiting: "Excuse me... but: (snoozed 2x)",
+      ignored: "Excuse me... but: (snoozed 2x)",
+      done: "Excuse me... but:"
+    };
+
+    var still = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    var mood = "idle";
+    var chosen = CANDIDATES[6];
+    var step = 0;
+    var timer = null;
+    var stage = document.getElementById("stage");
+    var eyebrow = document.getElementById("eyebrow");
+    var faces = [];
+    var specimens = [];
+
+    function art(candidate, brow, eye, mouth, pose) {
+      return candidate.draw(
+        pick(candidate.brows, "brows", brow),
+        pick(candidate.eyes, "eyes", eye),
+        pick(candidate.mouths, "mouths", mouth),
+        pose
+      );
+    }
+
+    function everyFrame(candidate) {
+      var all = [];
+      Object.keys(SCRIPT).forEach(function (name) {
+        SCRIPT[name].forEach(function (frame) {
+          all.push(art(candidate, frame[0], frame[1], frame[2], frame[3]).split("\n"));
+        });
+      });
+      return all;
+    }
+
+    function play() {
+      window.clearTimeout(timer);
+      var frames = SCRIPT[mood];
+      var frame = frames[step % frames.length];
+      for (var i = 0; i < CANDIDATES.length; i += 1) {
+        faces[i].textContent = art(CANDIDATES[i], frame[0], frame[1], frame[2], frame[3]);
+      }
+      stage.textContent = art(chosen, frame[0], frame[1], frame[2], frame[3]);
+      if (still) return;
+      timer = window.setTimeout(function () {
+        step += 1;
+        play();
+      }, frame[4]);
+    }
+
+    function restart() {
+      step = 0;
+      stage.setAttribute("aria-label", "Reminderski, " + LABELS[mood]);
+      eyebrow.textContent = EYEBROWS[mood];
+      play();
+    }
+
+    CANDIDATES.forEach(function (candidate) {
+      var button = document.createElement("button");
+      button.type = "button";
+      button.className = "specimen";
+      button.setAttribute("aria-pressed", String(candidate === chosen));
+
+      var box = document.createElement("div");
+      box.className = "face";
+      box.style.fontSize = candidate.size + "px";
+      box.setAttribute("role", "img");
+      box.setAttribute("aria-label", candidate.name);
+
+      var name = document.createElement("span");
+      name.className = "name";
+      name.textContent = candidate.name;
+
+      var meta = document.createElement("span");
+      meta.className = "meta";
+      var grid = document.createElement("em");
+      grid.textContent = candidate.grid + " chars";
+      var size = document.createElement("em");
+      size.textContent = candidate.size + "px";
+      meta.appendChild(grid);
+      meta.appendChild(document.createTextNode(" · "));
+      meta.appendChild(size);
+      meta.appendChild(document.createElement("br"));
+      meta.appendChild(document.createTextNode(candidate.note));
+
+      button.appendChild(box);
+      button.appendChild(name);
+      button.appendChild(meta);
+      button.addEventListener("click", function () {
+        chosen = candidate;
+        specimens.forEach(function (other, position) {
+          other.setAttribute("aria-pressed", String(CANDIDATES[position] === chosen));
+        });
+        stage.style.fontSize = candidate.size + "px";
+        restart();
+      });
+
+      document.querySelector('.row[data-group="' + candidate.group + '"]').appendChild(button);
+      faces.push(box);
+      specimens.push(button);
+    });
+
+    // The audit: mark every cell that is ever different between two frames, and count both kinds
+    // of ink. Consecutive cells of the same kind become one span, so this stays a handful of
+    // nodes rather than one per character.
+    var audits = document.getElementById("audits");
+    AUDITED.forEach(function (wanted) {
+      var candidate = CANDIDATES.filter(function (each) { return each.name === wanted; })[0];
+      var frames = everyFrame(candidate);
+      var base = frames[0];
+      var moving = 0;
+      var fixed = 0;
+
+      var figure = document.createElement("div");
+      figure.className = "audit";
+      var box = document.createElement("div");
+      box.className = "face";
+      box.style.fontSize = candidate.size + "px";
+
+      base.forEach(function (line, row) {
+        if (row > 0) box.appendChild(document.createTextNode("\n"));
+        var run = "";
+        var runMoves = null;
+        for (var column = 0; column <= line.length; column += 1) {
+          var character = line.charAt(column);
+          var moves = false;
+          for (var i = 1; i < frames.length && column < line.length; i += 1) {
+            if (frames[i][row].charAt(column) !== character) { moves = true; break; }
+          }
+          // A cell counts as moving even when the resting frame leaves it blank — a mouth that
+          // opens into empty paper is movement the reader sees.
+          if (column < line.length) {
+            if (moves) { moving += 1; } else if (character !== " ") { fixed += 1; }
+          }
+          if (column === line.length || (runMoves !== null && moves !== runMoves)) {
+            var span = document.createElement("span");
+            span.className = runMoves ? "moves" : "fixed";
+            span.textContent = run;
+            box.appendChild(span);
+            run = "";
+          }
+          if (column < line.length) {
+            run += character;
+            runMoves = moves;
+          }
+        }
+      });
+
+      var tally = document.createElement("span");
+      tally.className = "tally";
+      var name = document.createElement("b");
+      name.textContent = candidate.name;
+      tally.appendChild(name);
+      tally.appendChild(document.createElement("br"));
+      tally.appendChild(document.createTextNode(moving + " cells change · " + fixed + " marks never do"));
+
+      figure.appendChild(box);
+      figure.appendChild(tally);
+      audits.appendChild(figure);
+    });
+
+    var moodButtons = Array.prototype.slice.call(document.querySelectorAll(".mood-pick"));
+    moodButtons.forEach(function (button) {
+      button.addEventListener("click", function () {
+        mood = button.getAttribute("data-mood");
+        moodButtons.forEach(function (other) {
+          other.setAttribute("aria-pressed", String(other === button));
+        });
+        restart();
+      });
+    });
+
+    stage.style.fontSize = chosen.size + "px";
+    restart();
+  })();
+</script>

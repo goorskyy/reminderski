@@ -23,7 +23,9 @@ pub const BUTTON_SIZE: i32 = 14;
 /// What you type, and what the reminder says when it comes back.
 pub const FIELD_SIZE: i32 = 15;
 pub const MESSAGE_SIZE: i32 = 17;
-pub const PERSONA_SIZE: i32 = 19;
+/// The note is thirteen characters wide and six tall, which is what sets this: any larger and
+/// it stops fitting the face box.
+pub const PERSONA_SIZE: i32 = 17;
 
 /// Letter spacing for the uppercase runs, which is most of both windows.
 pub const TITLE_TRACKING: i32 = 3;

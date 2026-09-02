@@ -1,0 +1,624 @@
+<title>Reminderski Avatar Line-up</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&display=swap">
+<style>
+  /* Page surround: follows the viewer's theme. The specimens and the window replica below do
+     not — that palette is the application, and it is the same in every theme. */
+  :root {
+    --page-ground: #e6e5e0;
+    --page-ink: #16150f;
+    --page-muted: #6f6d63;
+    --page-rule: #c9c7bd;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --page-ground: #16150f;
+      --page-ink: #edece5;
+      --page-muted: #918e83;
+      --page-rule: #34322a;
+    }
+  }
+  :root[data-theme="dark"] {
+    --page-ground: #16150f;
+    --page-ink: #edece5;
+    --page-muted: #918e83;
+    --page-rule: #34322a;
+  }
+
+  /* The application's own palette, from src/ui.rs. */
+  :root {
+    --ink: #0d0d0b;
+    --paper: #ffffff;
+    --label: #8b897f;
+    --bar: #0a0a08;
+    --bar-ink: #f2f1ea;
+    --edge: #b9b7ae;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--page-ground);
+    color: var(--page-ink);
+    font-family: Consolas, "JetBrains Mono", ui-monospace, "DejaVu Sans Mono", monospace;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .sheet {
+    max-width: 1120px;
+    margin: 0 auto;
+    padding: 40px 24px 72px;
+    display: flex;
+    flex-direction: column;
+    gap: 44px;
+  }
+
+  header { display: flex; flex-direction: column; gap: 12px; }
+  h1 {
+    margin: 0;
+    font-size: 19px;
+    font-weight: 700;
+    letter-spacing: 0.24em;
+    text-transform: uppercase;
+    text-wrap: balance;
+  }
+  .standfirst {
+    margin: 0;
+    max-width: 66ch;
+    font-size: 13px;
+    line-height: 1.75;
+    color: var(--page-muted);
+  }
+  .standfirst b { color: var(--page-ink); font-weight: 500; }
+
+  h2 {
+    margin: 0;
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: var(--page-muted);
+  }
+  section { display: flex; flex-direction: column; gap: 18px; }
+
+  /* ---- the mood strip ---- */
+
+  .controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .pill {
+    font: inherit;
+    font-size: 10.5px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    padding: 6px 11px;
+    border: 1px solid var(--page-rule);
+    border-radius: 999px;
+    background: transparent;
+    color: var(--page-muted);
+    cursor: pointer;
+  }
+  .pill:hover { color: var(--page-ink); border-color: var(--page-ink); }
+  .pill[aria-pressed="true"] {
+    background: var(--page-ink);
+    border-color: var(--page-ink);
+    color: var(--page-ground);
+  }
+  .pill:focus-visible { outline: 2px solid var(--page-ink); outline-offset: 2px; }
+  .controls .aside { font-size: 11px; color: var(--page-muted); letter-spacing: 0.04em; }
+
+  /* ---- the line-up ---- */
+
+  .lineup {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(184px, 1fr));
+    gap: 28px 22px;
+  }
+  .specimen {
+    font: inherit;
+    background: transparent;
+    border: 0;
+    padding: 0;
+    color: inherit;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    align-items: flex-start;
+    cursor: pointer;
+    text-align: left;
+  }
+  .specimen:focus-visible { outline: 2px solid var(--page-ink); outline-offset: 4px; }
+
+  /* The face box exactly as the notification draws it: 152 logical pixels, hairline, on paper. */
+  .face {
+    width: 152px;
+    height: 152px;
+    border: 1px solid var(--ink);
+    background: var(--paper);
+    color: var(--ink);
+    display: grid;
+    place-items: center;
+    white-space: pre;
+    text-align: center;
+    line-height: 1.15;
+  }
+  .specimen:hover .face { box-shadow: 0 0 0 3px var(--page-rule); }
+
+  .name {
+    font-size: 11px;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    padding: 3px 7px;
+    margin-left: -7px;
+  }
+  .specimen[aria-pressed="true"] .name { background: var(--page-ink); color: var(--page-ground); }
+  .meta {
+    font-size: 11px;
+    line-height: 1.65;
+    color: var(--page-muted);
+    font-variant-numeric: tabular-nums;
+  }
+  .meta em { font-style: normal; color: var(--page-ink); }
+
+  /* ---- the window replica ---- */
+
+  .window {
+    width: 520px;
+    max-width: 100%;
+    background: var(--paper);
+    border: 1px solid var(--edge);
+    color: var(--ink);
+    font-size: 14px;
+  }
+  .titlebar {
+    height: 34px;
+    background: var(--bar);
+    color: var(--bar-ink);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 14px;
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 0.22em;
+  }
+  .titlebar .close { letter-spacing: 0.06em; }
+  .window .body { padding: 18px; display: flex; flex-direction: column; gap: 16px; }
+  .window .top { display: flex; gap: 18px; }
+  .window .face { flex: none; }
+  .message { display: flex; flex-direction: column; gap: 10px; }
+  .eyebrow {
+    font-size: 11px;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: var(--label);
+  }
+  .message p { margin: 0; font-size: 17px; line-height: 1.5; text-wrap: balance; }
+
+  .snoozes { display: flex; gap: 10px; }
+  .action {
+    height: 44px;
+    flex: 1;
+    padding: 0 6px;
+    font: inherit;
+    font-size: 12px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    background: transparent;
+    border: 1px solid var(--ink);
+    border-radius: 0;
+    color: var(--ink);
+    cursor: pointer;
+  }
+  .action:hover { background: #f0efea; }
+  .action.filled {
+    flex: 0 0 118px;
+    background: var(--ink);
+    border-color: var(--ink);
+    color: var(--paper);
+    font-weight: 700;
+  }
+  .action.filled:hover { background: #26261f; }
+  .action:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+
+  .inplace { display: flex; flex-wrap: wrap; gap: 34px; align-items: flex-start; }
+  .verdict { display: flex; flex-direction: column; gap: 12px; max-width: 42ch; }
+  .verdict p { margin: 0; font-size: 12.5px; line-height: 1.7; color: var(--page-muted); }
+  .verdict p b { color: var(--page-ink); font-weight: 500; }
+
+  /* ---- notes ---- */
+
+  .notes {
+    border-top: 1px solid var(--page-rule);
+    padding-top: 30px;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: 30px;
+  }
+  .note { display: flex; flex-direction: column; gap: 10px; }
+  .note ul { margin: 0; padding-left: 17px; display: flex; flex-direction: column; gap: 8px; }
+  .note li { font-size: 12.5px; line-height: 1.65; }
+  .note li b { font-weight: 700; }
+  .note code {
+    font: inherit;
+    font-size: 12px;
+    background: var(--page-rule);
+    padding: 0 4px;
+  }
+
+  @media (max-width: 640px) {
+    .sheet { padding: 24px 14px 48px; }
+    .snoozes { flex-wrap: wrap; }
+    .action.filled { flex: 1 0 118px; }
+  }
+</style>
+
+<div class="sheet">
+  <header>
+    <h1>Reminderski &mdash; the avatar</h1>
+    <p class="standfirst">
+      Eight candidates for the character on a due notification, each animated through the same
+      script, so the only thing that differs between them is the drawing. Pick one. <b>Then</b>
+      we write the rules for how it behaves &mdash; which mood it wears, when it changes, what it
+      is allowed to react to. Every candidate is plain ASCII in Consolas, on a fixed rectangle of
+      characters, drawn in the real 152&nbsp;px face box.
+    </p>
+  </header>
+
+  <section>
+    <h2>The line-up</h2>
+    <div class="controls">
+      <button class="pill mood-pick" type="button" data-mood="idle" aria-pressed="true">Idle</button>
+      <button class="pill mood-pick" type="button" data-mood="waiting" aria-pressed="false">Waiting</button>
+      <button class="pill mood-pick" type="button" data-mood="ignored" aria-pressed="false">Ignored</button>
+      <button class="pill mood-pick" type="button" data-mood="done" aria-pressed="false">Done</button>
+      <span class="aside">&nbsp;&mdash; all eight play the same script in step. Click one to drop it into the notification below.</span>
+    </div>
+    <div class="lineup" id="lineup"></div>
+  </section>
+
+  <section>
+    <h2>In place</h2>
+    <div class="inplace">
+      <div class="window">
+        <div class="titlebar"><span>REMINDERSKI !!</span><span class="close">[X]</span></div>
+        <div class="body">
+          <div class="top">
+            <div class="face" id="stage" role="img" aria-label="Reminderski"></div>
+            <div class="message">
+              <span class="eyebrow" id="eyebrow">Excuse me... but:</span>
+              <p>talk to Michal about weird commit validation</p>
+            </div>
+          </div>
+          <div class="snoozes">
+            <button class="action" type="button">+30 min</button>
+            <button class="action" type="button">+2 hrs</button>
+            <button class="action" type="button">Tomorrow</button>
+            <button class="action filled" type="button">Done</button>
+          </div>
+        </div>
+      </div>
+      <div class="verdict">
+        <h2>What to judge it on</h2>
+        <p><b>At a glance, in the corner of a screen.</b> The notification arrives while you are
+          doing something else. The silhouette has to read in half a second, at 152&nbsp;px, out
+          of the corner of your eye.</p>
+        <p><b>Does it earn a reaction?</b> The point of a persona is that being looked at by one
+          is harder to ignore than a rectangle. Switch to <b>Ignored</b> and see which of them
+          you would least want to leave sitting there.</p>
+        <p><b>Has it got somewhere to go?</b> Whatever we pick has to carry a dozen more moods
+          later without redrawing the body: the eyes, the mouth and one pose are all that may
+          change between frames.</p>
+      </div>
+    </div>
+  </section>
+
+  <div class="notes">
+    <div class="note">
+      <h2>The rules a frame obeys</h2>
+      <ul>
+        <li>Every frame in a set is <b>the same rectangle of characters</b>, so redrawing one
+          never shifts anything around it.</li>
+        <li>Only the <b>eyes</b>, the <b>mouth</b> and one <b>pose</b> differ. The body is fixed.
+          That is what makes a new mood cost a handful of glyphs instead of a new drawing.</li>
+        <li>Plain ASCII only. The tick had to come out of the Done button because Consolas has no
+          glyph for it and Windows then measured the substitute at a width it did not draw it at.</li>
+        <li>The timer runs only while a notification is on screen. Nothing animates otherwise, so
+          the idle cost stays where it is.</li>
+      </ul>
+    </div>
+    <div class="note">
+      <h2>The moods today</h2>
+      <ul>
+        <li><b>Idle</b> &mdash; first showing, nothing has happened yet. Blinks and glances about.</li>
+        <li><b>Waiting</b> &mdash; pushed back at least once. Heavy lidded.</li>
+        <li><b>Ignored</b> &mdash; 25 seconds on screen with no answer. Stares.</li>
+        <li><b>Done</b> &mdash; not in the code. The window closes the instant you press Done, so
+          nobody has ever seen it. Worth holding a beat for?</li>
+      </ul>
+    </div>
+    <div class="note">
+      <h2>After the pick</h2>
+      <ul>
+        <li>Redraw the chosen one into <code>src/persona.rs</code> and set
+          <code>PERSONA_SIZE</code> to the size in its caption.</li>
+        <li>Then the behaviour: what the mood is allowed to know. Today that is the snooze count
+          and seconds on screen. <b>FEATURES.md #21</b> would open the whole history to it.</li>
+        <li>Whether it turns up anywhere else &mdash; the tray icon, the form, the dashboard
+          &mdash; or stays the notification's alone.</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<script>
+  // Each candidate is a body template plus its own vocabulary of eyes and mouths. The animation
+  // script below is shared, so every specimen is doing the same thing at the same moment and the
+  // only variable on the page is the drawing itself.
+  (function () {
+    var SCRIPT = {
+      idle: [
+        ["open", "flat", 0, 2600],
+        ["shut", "flat", 0, 130],
+        ["open", "flat", 0, 300],
+        ["shut", "flat", 0, 130],
+        ["open", "flat", 0, 2000],
+        ["lookL", "flat", 0, 900],
+        ["open", "flat", 0, 700],
+        ["lookR", "flat", 0, 900],
+        ["open", "flat", 0, 1600]
+      ],
+      waiting: [
+        ["shut", "small", 0, 1700],
+        ["open", "small", 0, 500],
+        ["shut", "small", 0, 2400],
+        ["shut", "open", 0, 900]
+      ],
+      ignored: [
+        ["wide", "open", 0, 3800],
+        ["wide", "open", 1, 200],
+        ["open", "open", 0, 260],
+        ["wide", "open", 0, 3000]
+      ],
+      done: [
+        ["happy", "smile", 0, 900],
+        ["shut", "smile", 0, 160],
+        ["happy", "smile", 0, 2200],
+        ["happy", "smile", 1, 380]
+      ]
+    };
+
+    // The usual pair of eyes and the usual mouth, shared by most of the candidates.
+    var EYES = { open: "o o", shut: "- -", wide: "O O", lookL: "oo ", lookR: " oo", happy: "^ ^" };
+    var MOUTHS = { flat: "-", small: ".", open: "_", smile: "u" };
+
+    var CANDIDATES = [
+      {
+        name: "Crate",
+        size: 19,
+        grid: "9 × 5",
+        note: "What is there now. A box with feet.",
+        eyes: EYES,
+        mouths: MOUTHS,
+        draw: function (e, m, pose) {
+          return " .-----. \n" +
+                 " | " + e + " | \n" +
+                 " |  " + m + "  | \n" +
+                 " '-----' \n" +
+                 "  " + (pose ? "\\   /" : "/   \\") + "  ";
+        }
+      },
+      {
+        name: "Arms",
+        size: 18,
+        grid: "11 × 5",
+        note: "The same box, given something to gesture with.",
+        eyes: EYES,
+        mouths: MOUTHS,
+        draw: function (e, m, pose) {
+          return "  .-----.  \n" +
+                 " " + (pose ? "\\" : "-") + "| " + e + " |" + (pose ? "/" : "-") + " \n" +
+                 "  |  " + m + "  |  \n" +
+                 "  '-----'  \n" +
+                 "   /   \\   ";
+        }
+      },
+      {
+        name: "Big face",
+        size: 18,
+        grid: "11 × 5",
+        note: "No body at all. The brows carry the expression.",
+        eyes: { open: "o   o", shut: "-   -", wide: "O   O", lookL: "o   -", lookR: "-   o", happy: "^   ^" },
+        mouths: { flat: "-", small: ".", open: "O", smile: "w" },
+        draw: function (e, m, pose) {
+          return " .-------. \n" +
+                 " |  " + (pose ? "^^^" : "___") + "  | \n" +
+                 " | " + e + " | \n" +
+                 " |   " + m + "   | \n" +
+                 " '-------' ";
+        }
+      },
+      {
+        name: "Owl",
+        size: 21,
+        grid: "9 × 5",
+        note: "Built to stare. The wings ruffle instead of the feet shuffling.",
+        eyes: EYES,
+        mouths: { flat: "v", small: ".", open: "V", smile: "w" },
+        draw: function (e, m, pose) {
+          return "   ,_,   \n" +
+                 "  (" + e + ")  \n" +
+                 "  " + (pose ? "(|" : "/)") + m + (pose ? "|)" : "(\\") + "  \n" +
+                 "   \" \"   \n" +
+                 " ~~~~~~~ ";
+        }
+      },
+      {
+        name: "Cat",
+        size: 21,
+        grid: "9 × 4",
+        note: "The warmest of the eight, and the least like a tool.",
+        eyes: { open: "o.o", shut: "-.-", wide: "O.O", lookL: "o.-", lookR: "-.o", happy: "^.^" },
+        mouths: { flat: "^", small: ".", open: "o", smile: "w" },
+        draw: function (e, m, pose) {
+          return "  /\\_/\\  \n" +
+                 " ( " + e + " ) \n" +
+                 "  > " + m + " <  \n" +
+                 "  " + (pose ? "\\   /" : "/   \\") + "  ";
+        }
+      },
+      {
+        name: "Note",
+        size: 18,
+        grid: "11 × 5",
+        note: "The thing itself: pinned up, torn off a pad.",
+        eyes: EYES,
+        mouths: MOUTHS,
+        draw: function (e, m, pose) {
+          return "    (o)    \n" +
+                 " ,-------, \n" +
+                 " |  " + e + "  | \n" +
+                 " |   " + m + "   | \n" +
+                 " '" + (pose ? "v~v~v~v" : "~v~v~v~") + "' ";
+        }
+      },
+      {
+        name: "Ghost",
+        size: 21,
+        grid: "9 × 4",
+        note: "Hovers rather than stands. Nothing plants it on your desk.",
+        eyes: EYES,
+        mouths: MOUTHS,
+        draw: function (e, m, pose) {
+          return "  .---.  \n" +
+                 " ( " + e + " ) \n" +
+                 " (  " + m + "  ) \n" +
+                 " " + (pose ? "\\_/\\_/\\" : "/\\_/\\_/") + " ";
+        }
+      },
+      {
+        name: "Bracket",
+        size: 30,
+        grid: "7 × 1",
+        note: "One line. Nothing to draw badly, and the face box could shrink.",
+        eyes: EYES,
+        mouths: { flat: "_", small: ".", open: "O", smile: "_" },
+        draw: function (e, m, pose) {
+          return (pose ? "( " : "[ ") + e.charAt(0) + m + e.charAt(2) + (pose ? " )" : " ]");
+        }
+      }
+    ];
+
+    var LABELS = {
+      idle: "idling",
+      waiting: "waiting",
+      ignored: "staring at you",
+      done: "pleased"
+    };
+    var EYEBROWS = {
+      idle: "Excuse me... but:",
+      waiting: "Excuse me... but: (snoozed 2x)",
+      ignored: "Excuse me... but: (snoozed 2x)",
+      done: "Excuse me... but:"
+    };
+
+    var still = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    var mood = "idle";
+    var chosen = CANDIDATES[0];
+    var step = 0;
+    var timer = null;
+    var stage = document.getElementById("stage");
+    var eyebrow = document.getElementById("eyebrow");
+    var lineup = document.getElementById("lineup");
+    var faces = [];
+    var specimens = [];
+
+    function render(candidate, box) {
+      var frames = SCRIPT[mood];
+      var frame = frames[step % frames.length];
+      var eyes = candidate.eyes[frame[0]] || candidate.eyes.open;
+      var mouth = candidate.mouths[frame[1]] || candidate.mouths.flat;
+      box.textContent = candidate.draw(eyes, mouth, frame[2]);
+    }
+
+    function play() {
+      window.clearTimeout(timer);
+      for (var i = 0; i < CANDIDATES.length; i += 1) {
+        render(CANDIDATES[i], faces[i]);
+      }
+      render(chosen, stage);
+      if (still) return;
+      var frames = SCRIPT[mood];
+      timer = window.setTimeout(function () {
+        step += 1;
+        play();
+      }, frames[step % frames.length][3]);
+    }
+
+    function restart() {
+      step = 0;
+      stage.setAttribute("aria-label", "Reminderski, " + LABELS[mood]);
+      eyebrow.textContent = EYEBROWS[mood];
+      play();
+    }
+
+    CANDIDATES.forEach(function (candidate) {
+      var button = document.createElement("button");
+      button.type = "button";
+      button.className = "specimen";
+      button.setAttribute("aria-pressed", String(candidate === chosen));
+
+      var box = document.createElement("div");
+      box.className = "face";
+      box.style.fontSize = candidate.size + "px";
+      box.setAttribute("role", "img");
+      box.setAttribute("aria-label", candidate.name);
+
+      var name = document.createElement("span");
+      name.className = "name";
+      name.textContent = candidate.name;
+
+      var meta = document.createElement("span");
+      meta.className = "meta";
+      var grid = document.createElement("em");
+      grid.textContent = candidate.grid + " chars";
+      var size = document.createElement("em");
+      size.textContent = candidate.size + "px";
+      meta.appendChild(grid);
+      meta.appendChild(document.createTextNode(" · "));
+      meta.appendChild(size);
+      meta.appendChild(document.createElement("br"));
+      meta.appendChild(document.createTextNode(candidate.note));
+
+      button.appendChild(box);
+      button.appendChild(name);
+      button.appendChild(meta);
+      button.addEventListener("click", function () {
+        chosen = candidate;
+        specimens.forEach(function (other, position) {
+          other.setAttribute("aria-pressed", String(CANDIDATES[position] === chosen));
+        });
+        stage.style.fontSize = candidate.size + "px";
+        restart();
+      });
+
+      lineup.appendChild(button);
+      faces.push(box);
+      specimens.push(button);
+    });
+
+    var moodButtons = Array.prototype.slice.call(document.querySelectorAll(".mood-pick"));
+    moodButtons.forEach(function (button) {
+      button.addEventListener("click", function () {
+        mood = button.getAttribute("data-mood");
+        moodButtons.forEach(function (other) {
+          other.setAttribute("aria-pressed", String(other === button));
+        });
+        restart();
+      });
+    });
+
+    stage.style.fontSize = chosen.size + "px";
+    restart();
+  })();
+</script>
