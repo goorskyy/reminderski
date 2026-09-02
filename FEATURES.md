@@ -30,3 +30,6 @@ Nothing in this file is approved work unless explicitly moved into a milestone.
 | 22 | winget package | Medium | Publish a winget manifest so Reminderski can be installed with `winget install`, pointing at the GitHub release. |
 | 23 | Give the character more life | Medium | The persona is readable but flat. Richer ASCII, more moods, and reactions to what is happening. |
 | 24 | Tune the two windows | Low | Spacing, proportions and weight across the form and the notification, once they have been lived with. |
+| 25 | Delete reminders | Medium | Remove a reminder for good. Needs a stable identifier per reminder first, since the dashboard and any open notification address them by position. |
+| 26 | Start with Windows | Low | Register Reminderski to run at login, with a way to turn it off again. |
+| 27 | Live dashboard | Low | Push changes to the open page instead of re-reading every fifteen seconds. |

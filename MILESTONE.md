@@ -165,31 +165,54 @@ never had Rust or Visual Studio installed, with no other download required.
 
 ## M7 — Local Dashboard
 
+**Status: built, not confirmed.** The page is there and the tray icon opens it. It stays open
+until the human has used it and says it does what they wanted.
+
 **Goal:** Provide a simple local overview of reminders.
+
+The page is built into the executable and served on the loopback address rather than opened from
+a file: a page loaded from `file://` cannot read the reminder file and cannot send anything back,
+so it could only have been a stale, read-only snapshot.
 
 ### Work
 
-- Local web server/dashboard.
+- Local web server, on its own thread so a browser can never make the shortcut wait.
 - Active reminders.
 - Completed reminders.
-- Basic reminder actions.
+- Basic reminder actions: done, snooze, and putting a finished one back.
 
 ### Done when
 
 The user can inspect and manage reminders through the local dashboard.
 
+Deleting is not part of this. Reminders are addressed by their position in the file, which both
+the dashboard and any open notification rely on, so deleting one needs stable identifiers first.
+
 ---
 
 ## M8 — MVP Polish
+
+**Status: not started.** The last milestone.
 
 **Goal:** Make the complete workflow reliable and pleasant enough to call Reminderski an MVP.
 
 ### Work
 
-- Fix issues discovered during previous milestones.
+Known problems, each found while building an earlier milestone:
+
 - Raise the already open input form when the shortcut is pressed again, instead of ignoring the press.
 - Understand day names in time expressions, such as `friday` or `next tuesday`.
 - Tell the user which part of the form it could not read, instead of one beep for every reason.
+- Quitting from the tray while the input form is open only closes the form: the form's message
+  loop takes the quit message meant for the application.
+- Move the remaining notifications down when one of a stack is answered.
+- Scroll a reminder too long for the notification, rather than clipping it.
+- Reach the notification's keys without clicking it first. It deliberately does not take the
+  foreground, which also leaves it unable to hear the keyboard.
+- The console control handler no longer has a console to guard, now that there is no console.
+
+And the milestone's own work:
+
 - Improve startup and interaction speed.
 - Verify persistence and recovery.
 - Verify keyboard workflow.
@@ -208,4 +231,5 @@ The human explicitly considers the MVP satisfactory.
 
 This milestone plan is considered complete when the human is happy with the MVP.
 
-After MVP completion, future work should normally be introduced as new milestones rather than continuously expanding this plan.
+After that the plan stops being the way work is chosen. Features are picked from `FEATURES.md`
+one at a time, by whatever the human feels like building next.
