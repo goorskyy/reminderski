@@ -165,8 +165,8 @@ never had Rust or Visual Studio installed, with no other download required.
 
 ## M7 — Local Dashboard
 
-**Status: built, not confirmed.** The page is there and the tray icon opens it. It stays open
-until the human has used it and says it does what they wanted.
+**Status: done.** The page lists what is waiting and what is finished, the actions stick, and the
+tray icon opens it.
 
 **Goal:** Provide a simple local overview of reminders.
 
