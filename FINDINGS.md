@@ -27,10 +27,6 @@ moment, fix them together.
 - Quitting from the tray while the form is open only closes the form. The form's message loop
   takes the quit message meant for the application.
 
-## Time expressions
-
-- Day names are not understood: `friday` and `next tuesday` are rejected.
-
 ## Leftovers
 
 - The console control handler in `capture.rs` guards against the synthetic Ctrl+C killing the

@@ -57,15 +57,20 @@ pub fn now_unix() -> u64 {
 /// Absolute: `at 15:00`, `at 3pm`, `at 9`, `tomorrow`, `tomorrow at 9:30`. A clock time that has
 /// already passed today means tomorrow, and a bare `tomorrow` means 09:00.
 ///
+/// By day name: `friday`, `fri`, `friday at 15:00`, `next tuesday`. A day name means the next
+/// one to come round, which is today only when the time has not yet passed. Writing `next` in
+/// front of it rules today out and changes nothing else.
+///
 /// Absolute times are resolved against the local clock as a plain offset from now, so a
 /// reminder that crosses a daylight-saving change arrives an hour off. Reminders live for hours
 /// rather than months, which makes that rare enough not to carry a time zone library for.
 pub fn parse_when(input: &str) -> Option<Duration> {
-    parse_when_at(input, local_time_of_day())
+    parse_when_at(input, local_time_of_day(), local_weekday())
 }
 
-/// The same, with the current local time of day supplied, which is what the tests exercise.
-fn parse_when_at(input: &str, now: u32) -> Option<Duration> {
+/// The same, with the current local time of day and weekday supplied, which is what the tests
+/// exercise.
+fn parse_when_at(input: &str, now: u32, today: u16) -> Option<Duration> {
     let lowered = input.trim().to_ascii_lowercase();
 
     if let Some(rest) = lowered.strip_prefix("tomorrow") {
@@ -74,6 +79,18 @@ fn parse_when_at(input: &str, now: u32) -> Option<Duration> {
     if let Some(rest) = lowered.strip_prefix("today") {
         return Some(delay_until(clock_after_day_word(rest)?, now, false));
     }
+
+    // `next friday` and `friday` take the same clock time after them as `tomorrow` does.
+    let (after_next, not_today) = match lowered.strip_prefix("next ") {
+        Some(rest) => (rest.trim_start(), true),
+        None => (lowered.as_str(), false),
+    };
+    let (word, rest) = split_first_word(after_next);
+    if let Some(wanted) = weekday_number(word) {
+        let clock = clock_after_day_word(rest)?;
+        return Some(delay_until_weekday(wanted, clock, today, now, not_today));
+    }
+
     if let Some(rest) = lowered.strip_prefix("at ") {
         return Some(delay_until(parse_clock(rest.trim())?, now, false));
     }
@@ -87,6 +104,43 @@ fn delay_until(target: u32, now: u32, next_day: bool) -> Duration {
         seconds += i64::from(DAY);
     }
     Duration::from_secs(seconds as u64)
+}
+
+/// How long from now until `clock` on the next `wanted` weekday.
+///
+/// Today counts when the time has not yet passed, which is the same rule a bare clock time
+/// follows. `next` rules today out and does nothing else: it never pushes the reminder a further
+/// week. The two readings of "next friday" cannot both be served, and of the two mistakes, being
+/// reminded a week early is one you can see and snooze, while being reminded a week late is one
+/// you cannot.
+fn delay_until_weekday(wanted: u16, clock: u32, today: u16, now: u32, not_today: bool) -> Duration {
+    let mut days = u32::from((wanted + 7 - today) % 7);
+    if days == 0 && (not_today || clock <= now) {
+        days = 7;
+    }
+    let seconds = i64::from(days) * i64::from(DAY) + i64::from(clock) - i64::from(now);
+    Duration::from_secs(seconds as u64)
+}
+
+/// Sunday is 0, matching the weekday Windows reports in SYSTEMTIME.
+fn weekday_number(word: &str) -> Option<u16> {
+    Some(match word {
+        "sunday" | "sun" => 0,
+        "monday" | "mon" => 1,
+        "tuesday" | "tue" | "tues" => 2,
+        "wednesday" | "wed" => 3,
+        "thursday" | "thu" | "thur" | "thurs" => 4,
+        "friday" | "fri" => 5,
+        "saturday" | "sat" => 6,
+        _ => return None,
+    })
+}
+
+fn split_first_word(text: &str) -> (&str, &str) {
+    match text.split_once(' ') {
+        Some((word, rest)) => (word, rest),
+        None => (text, ""),
+    }
 }
 
 /// The clock time following `tomorrow` or `today`, which may be absent, bare, or after `at`.
@@ -196,15 +250,21 @@ fn local_time_of_day() -> u32 {
     u32::from(now.wHour) * 3600 + u32::from(now.wMinute) * 60 + u32::from(now.wSecond)
 }
 
+fn local_weekday() -> u16 {
+    local_now().wDayOfWeek
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    /// 10:00 local, the reference "now" for the absolute cases.
+    /// 10:00 on a Wednesday, the reference "now" for the absolute cases. Midweek, so that a day
+    /// name can be tested in both directions.
     const TEN: u32 = 10 * 3600;
+    const WEDNESDAY: u16 = 3;
 
     fn seconds(input: &str) -> Option<u64> {
-        parse_when_at(input, TEN).map(|delay| delay.as_secs())
+        parse_when_at(input, TEN, WEDNESDAY).map(|delay| delay.as_secs())
     }
 
     #[test]
@@ -264,6 +324,44 @@ mod tests {
         assert_eq!(seconds("today at 9:00"), Some(23 * 3600));
     }
 
+    /// From Wednesday: Friday is two days off, Tuesday is six, because a day name always looks
+    /// forward. A bare one means the morning, as `tomorrow` does.
+    #[test]
+    fn a_day_name_means_the_next_one_to_come_round() {
+        assert_eq!(seconds("friday"), Some(2 * 86400 - 3600));
+        assert_eq!(seconds("tuesday"), Some(6 * 86400 - 3600));
+        assert_eq!(seconds("friday at 15:00"), Some(2 * 86400 + 5 * 3600));
+        assert_eq!(seconds("friday 15:00"), Some(2 * 86400 + 5 * 3600));
+    }
+
+    #[test]
+    fn a_day_name_may_be_written_short() {
+        assert_eq!(seconds("fri"), seconds("friday"));
+        assert_eq!(seconds("TUES"), seconds("tuesday"));
+        assert_eq!(seconds("sun"), seconds("sunday"));
+    }
+
+    /// Today's own name is today while the time is still ahead, and a week off once it is not,
+    /// which is the rule a bare clock time already follows.
+    #[test]
+    fn todays_name_stays_today_until_the_time_has_passed() {
+        assert_eq!(seconds("wednesday at 15:00"), Some(5 * 3600));
+        assert_eq!(seconds("wednesday at 9:00"), Some(7 * 86400 - 3600));
+        assert_eq!(seconds("wednesday"), Some(7 * 86400 - 3600));
+    }
+
+    /// `next` rules today out. It does not push the reminder a further week, so from Wednesday
+    /// `next friday` is the same Friday as `friday`.
+    #[test]
+    fn next_only_rules_out_today() {
+        assert_eq!(
+            seconds("next wednesday at 15:00"),
+            Some(7 * 86400 + 5 * 3600)
+        );
+        assert_eq!(seconds("next friday"), seconds("friday"));
+        assert_eq!(seconds("next tuesday"), Some(6 * 86400 - 3600));
+    }
+
     #[test]
     fn rejects_what_it_cannot_schedule() {
         assert_eq!(seconds(""), None);
@@ -271,8 +369,11 @@ mod tests {
         assert_eq!(seconds("40"), None);
         assert_eq!(seconds("in40m"), None);
         assert_eq!(seconds("40x"), None);
-        assert_eq!(seconds("next tuesday"), None);
         assert_eq!(seconds("at"), None);
+        assert_eq!(seconds("next"), None);
+        assert_eq!(seconds("next someday"), None);
+        assert_eq!(seconds("fridayish"), None);
+        assert_eq!(seconds("friday at 25:00"), None);
         assert_eq!(seconds("at 25:00"), None);
         assert_eq!(seconds("at 12:60"), None);
         assert_eq!(seconds("at 13pm"), None);
