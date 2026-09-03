@@ -15,8 +15,8 @@ moment, fix them together.
     snooze/done buttons.
 - Several notifications stack upwards, but the rest do not move down when one is answered.
 - A reminder too long for the window is clipped rather than scrolled.
-- The keyboard does not reach it until it has been clicked. It deliberately does not take the
-  foreground when it appears, which also leaves it unable to hear a key.
+- Nothing on the window says that Ctrl+Alt+A reaches it, or that Enter and 1, 2, 3 answer it
+  once it has been reached.
 
 ## The input form
 

@@ -24,8 +24,8 @@ use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
     MOD_ALT, MOD_CONTROL, MOD_NOREPEAT, RegisterHotKey, UnregisterHotKey,
 };
 use windows_sys::Win32::UI::WindowsAndMessaging::{
-    DispatchMessageW, IsDialogMessageW, MSG, MWMO_INPUTAVAILABLE, MsgWaitForMultipleObjectsEx,
-    PM_REMOVE, PeekMessageW, QS_ALLINPUT, TranslateMessage, WM_HOTKEY, WM_QUIT,
+    DispatchMessageW, MSG, MWMO_INPUTAVAILABLE, MsgWaitForMultipleObjectsEx, PM_REMOVE,
+    PeekMessageW, QS_ALLINPUT, SetForegroundWindow, TranslateMessage, WM_HOTKEY, WM_QUIT,
 };
 
 use crate::notify::{Notification, Outcome};
@@ -33,8 +33,10 @@ use crate::reminder::{Reminder, State};
 use crate::store::Store;
 use crate::tray::Tray;
 
-const HOTKEY_ID: i32 = 1;
+const CAPTURE_HOTKEY: i32 = 1;
+const ANSWER_HOTKEY: i32 = 2;
 const VK_R: u32 = 0x52;
+const VK_A: u32 = 0x41;
 
 /// Wait forever, when there is nothing due to wait for.
 const INFINITE: u32 = u32::MAX;
@@ -77,23 +79,37 @@ fn main() -> io::Result<()> {
     // Held until the loop ends, which is what puts the icon away again.
     let _tray = Tray::show(address)?;
 
-    // A null window handle posts WM_HOTKEY to this thread's message queue, so no window is
-    // needed to receive it.
-    if unsafe {
-        RegisterHotKey(
-            ptr::null_mut(),
-            HOTKEY_ID,
-            MOD_CONTROL | MOD_ALT | MOD_NOREPEAT,
-            VK_R,
-        )
-    } == 0
-    {
-        return Err(io::Error::last_os_error());
+    // Without the capture shortcut there is no application, so failing to take it is fatal.
+    register_hotkey(CAPTURE_HOTKEY, VK_R)?;
+    // Answering one is a convenience by comparison. If something else already owns the
+    // combination, say so in the log and carry on: the mouse still works.
+    if let Err(error) = register_hotkey(ANSWER_HOTKEY, VK_A) {
+        log::problem(&format!("the answer shortcut is not available: {error}"));
     }
 
     app.run();
 
-    unsafe { UnregisterHotKey(ptr::null_mut(), HOTKEY_ID) };
+    unsafe {
+        UnregisterHotKey(ptr::null_mut(), CAPTURE_HOTKEY);
+        UnregisterHotKey(ptr::null_mut(), ANSWER_HOTKEY);
+    }
+    Ok(())
+}
+
+/// A null window handle posts WM_HOTKEY to this thread's message queue, so no window is needed
+/// to receive it.
+fn register_hotkey(id: i32, key: u32) -> io::Result<()> {
+    let registered = unsafe {
+        RegisterHotKey(
+            ptr::null_mut(),
+            id,
+            MOD_CONTROL | MOD_ALT | MOD_NOREPEAT,
+            key,
+        )
+    };
+    if registered == 0 {
+        return Err(io::Error::last_os_error());
+    }
     Ok(())
 }
 
@@ -129,16 +145,11 @@ impl App {
                 return false;
             }
             if message.message == WM_HOTKEY {
-                self.on_hotkey();
-                continue;
-            }
-            // This is what gives the notifications Enter for the default button, Escape for
-            // dismissal and Tab between the two, without subclassing anything.
-            let handled = self
-                .showing
-                .iter()
-                .any(|shown| unsafe { IsDialogMessageW(shown.window(), &message) } != 0);
-            if handled {
+                match message.wParam as i32 {
+                    CAPTURE_HOTKEY => self.on_capture_hotkey(),
+                    ANSWER_HOTKEY => self.reach_a_notification(),
+                    _ => {}
+                }
                 continue;
             }
             unsafe {
@@ -258,7 +269,24 @@ impl App {
             .unwrap_or(0)
     }
 
-    fn on_hotkey(&mut self) {
+    /// Puts the notification nearest the corner in the foreground, which is the only way the
+    /// keyboard can reach it.
+    ///
+    /// A notification deliberately does not take the foreground when it appears, so that a
+    /// reminder falling due mid-sentence does not swallow what is being typed. The cost of that
+    /// is that its keys — Enter, Escape and the snoozes — cannot arrive either, because Windows
+    /// delivers them to whichever window has the focus. This is the one place the user asks for
+    /// it, so this is the one place it is taken.
+    ///
+    /// The lowest slot is the one at the bottom of the stack, nearest where the eye already is.
+    /// Answering it closes it, so pressing the key again reaches the next one up.
+    fn reach_a_notification(&mut self) {
+        if let Some(notification) = self.showing.iter().min_by_key(|shown| shown.slot) {
+            unsafe { SetForegroundWindow(notification.window()) };
+        }
+    }
+
+    fn on_capture_hotkey(&mut self) {
         // A failed capture still opens the form, blank. Losing the user's keystroke because
         // their clipboard misbehaved would be worse than starting from an empty box.
         let captured = capture::capture_selection().unwrap_or_else(|error| {

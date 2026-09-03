@@ -8,6 +8,10 @@ Select text → global shortcut → enter `in 40m` → Enter → forget about it
 
 When the reminder is due, a minimal notification appears with quick actions such as snooze or done.
 
+It does not steal the focus when it appears, so it never swallows what you are typing. Press
+Ctrl+Alt+A to reach it, and then Enter for Done, 1, 2 or 3 for the snoozes, or Escape to leave it
+for later.
+
 The initial target is Windows.
 
 The application is intentionally small, monochrome, keyboard-first, and local.
