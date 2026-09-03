@@ -41,8 +41,22 @@ already has that one.
 The page is built into the executable and served from the loopback address, so it works with no
 network and nothing outside this machine can reach it.
 
+## Releases
+
 Releases are cut by tagging: pushing a tag such as `0.0.1` builds that commit and attaches the
 executables to a GitHub release of the same name.
+
+The notes on that release are the commits since the previous tag: the subject as a heading and
+the opening paragraph underneath, so nothing has to be written twice. Commits that only touch
+documentation are left out, and the compare link at the bottom carries the full story for anyone
+who wants it. The release arrives as a **draft**: read it, change anything that reads badly, and
+press Publish.
+
+To see what a tag will say before pushing it:
+
+```
+bash .github/release-notes.sh v0.0.2
+```
 
 ## Building
 

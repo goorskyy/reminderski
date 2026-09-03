@@ -41,10 +41,18 @@ jobs:
     permissions:
       contents: write
     steps:
+      # Before the artifacts, because checking out cleans the workspace it lands in. The whole
+      # history and every tag, because the notes are the commits between this tag and the one
+      # before it.
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
       - uses: actions/download-artifact@v4
         with:
           path: dist
           merge-multiple: true
+      - name: Write the release notes from the commits in this tag
+        run: bash .github/release-notes.sh "$GITHUB_REF_NAME" > notes.md
       # winget identifies a download by its hash, so publish the hashes with the executables.
       - name: Record the hashes
         shell: bash
@@ -58,6 +66,16 @@ jobs:
         run: |
           if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
             gh release upload "$GITHUB_REF_NAME" dist/* --clobber --repo "$GITHUB_REPOSITORY"
+            # A release made in the interface may already say something somebody wrote by hand,
+            # and overwriting that would be the one way this can lose work. Only fill in a blank.
+            existing=$(gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" \
+                       --json body --jq .body)
+            if [ -z "$existing" ]; then
+              gh release edit "$GITHUB_REF_NAME" --notes-file notes.md --repo "$GITHUB_REPOSITORY"
+            fi
           else
-            gh release create "$GITHUB_REF_NAME" dist/* --generate-notes --repo "$GITHUB_REPOSITORY"
+            # A draft, so the notes can be read and edited before anybody downloads anything.
+            # Publishing it is one button on the release page.
+            gh release create "$GITHUB_REF_NAME" dist/* --draft --notes-file notes.md \
+              --repo "$GITHUB_REPOSITORY"
           fi
