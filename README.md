@@ -80,6 +80,6 @@ nothing has gone wrong.
 
 Early development.
 
-Known problems are listed in `docs/known-problems.md`.
+Known problems are listed in `FINDINGS.md`.
 
 Future ideas are kept in `FEATURES.md`.
