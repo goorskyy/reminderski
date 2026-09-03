@@ -33,3 +33,5 @@ Nothing in this file is approved work until it is picked.
 | 25 | Delete reminders | Medium | Remove a reminder for good. Needs a stable identifier per reminder first, since the dashboard and any open notification address them by position. |
 | 26 | Start with Windows | Low | Register Reminderski to run at login, with a way to turn it off again. |
 | 27 | Live dashboard | Low | Push changes to the open page instead of re-reading every fifteen seconds. |
+| 28 | Launch confirmation | Low | Show something at startup (e.g. a tray balloon) confirming the app has started, so double-clicking the .exe doesn't feel like nothing happened. |
+| 29 | Confirm a reminder was saved | Low | The form closes instantly on confirm with no acknowledgement. Show something like "will remind you at <date/time>" so it's clear it was saved and for when. |
