@@ -24,20 +24,22 @@ use windows_sys::Win32::UI::Shell::{
 use windows_sys::Win32::UI::WindowsAndMessaging::{
     AppendMenuW, CreateIconIndirect, CreatePopupMenu, CreateWindowExW, DefWindowProcW, DestroyIcon,
     DestroyMenu, DestroyWindow, GetCursorPos, GetSystemMetrics, HICON, ICONINFO, IDC_ARROW,
-    LoadCursorW, MF_STRING, PostQuitMessage, RegisterClassW, SM_CXSMICON, SM_CYSMICON,
-    SW_SHOWNORMAL, SetForegroundWindow, TPM_RIGHTBUTTON, TrackPopupMenu, WM_APP, WM_COMMAND,
-    WM_LBUTTONDBLCLK, WM_NULL, WM_RBUTTONUP, WNDCLASSW, WS_OVERLAPPED,
+    LoadCursorW, MF_CHECKED, MF_STRING, MF_UNCHECKED, PostQuitMessage, RegisterClassW, SM_CXSMICON,
+    SM_CYSMICON, SW_SHOWNORMAL, SetForegroundWindow, TPM_RIGHTBUTTON, TrackPopupMenu, WM_APP,
+    WM_COMMAND, WM_LBUTTONDBLCLK, WM_NULL, WM_RBUTTONUP, WNDCLASSW, WS_OVERLAPPED,
 };
 
 use crate::ui::{BAR, BAR_INK, draw_text, fill, mono_font, wide};
+use crate::{autostart, log};
 
 const CLASS_NAME: &str = "ReminderskiTray";
 const TOOLTIP: &str = "Reminderski — Ctrl+Alt+R to capture";
 
-/// The message the shell sends us about the icon, and the one menu item there is.
+/// The message the shell sends us about the icon, and the items on its menu.
 const TRAY_MESSAGE: u32 = WM_APP + 1;
 const ID_DASHBOARD: usize = 1;
-const ID_QUIT: usize = 2;
+const ID_AUTOSTART: usize = 2;
+const ID_QUIT: usize = 3;
 
 /// The dashboard address, so the menu can open it. Set once, before the icon appears.
 static ADDRESS: OnceLock<String> = OnceLock::new();
@@ -219,6 +221,13 @@ unsafe extern "system" fn window_proc(
             open_dashboard();
             0
         }
+        WM_COMMAND if (wparam & 0xffff) == ID_AUTOSTART => {
+            let wanted = !autostart::is_enabled();
+            if let Err(error) = autostart::set(wanted) {
+                log::problem(&format!("could not change the startup entry: {error}"));
+            }
+            0
+        }
         WM_COMMAND if (wparam & 0xffff) == ID_QUIT => {
             // Ends the application's message loop, which then puts the icon away.
             unsafe { PostQuitMessage(0) };
@@ -259,6 +268,19 @@ fn show_menu(window: HWND) {
                 wide("Open dashboard").as_ptr(),
             );
         }
+        // The tick is read off the registry each time the menu opens, so it still agrees after
+        // the entry has been turned off somewhere else, such as Task Manager's Startup list.
+        let ticked = if autostart::is_enabled() {
+            MF_CHECKED
+        } else {
+            MF_UNCHECKED
+        };
+        AppendMenuW(
+            menu,
+            MF_STRING | ticked,
+            ID_AUTOSTART,
+            wide("Start with Windows").as_ptr(),
+        );
         AppendMenuW(menu, MF_STRING, ID_QUIT, wide("Quit Reminderski").as_ptr());
     }
 

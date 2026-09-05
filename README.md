@@ -29,7 +29,9 @@ Running it puts an `R` in the notification area and nothing else on screen. Leav
 press Ctrl+Alt+R whenever you want to set a reminder. To stop it, right-click the icon and
 choose Quit.
 
-It does not start with Windows, so run it again after a restart.
+To have it there after a restart, right-click the icon and tick *Start with Windows*. That adds
+one entry to your own startup list, the same one Task Manager shows under Startup, so it can be
+turned off from either place. It is off until you ask for it.
 
 ## Dashboard
 

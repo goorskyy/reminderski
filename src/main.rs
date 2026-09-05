@@ -2,6 +2,7 @@
 // written to the log beside the reminder file.
 #![windows_subsystem = "windows"]
 
+mod autostart;
 mod capture;
 mod clipboard;
 mod dashboard;
@@ -75,6 +76,9 @@ fn main() -> io::Result<()> {
             None
         }
     };
+
+    // A new release is a new download, which may not have landed where the last one did.
+    autostart::follow_the_executable();
 
     // Held until the loop ends, which is what puts the icon away again.
     let _tray = Tray::show(address)?;
