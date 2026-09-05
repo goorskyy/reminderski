@@ -35,8 +35,21 @@ pub fn wide(text: &str) -> Vec<u16> {
     text.encode_utf16().chain(once(0)).collect()
 }
 
+/// The whole design, as a percentage of the size it was first drawn at.
+///
+/// Every logical pixel in both windows goes through `scale` — the window itself, the padding,
+/// the fonts and the letter spacing alike — so the design is retuned here rather than in forty
+/// constants that would then have to agree with each other. It was drawn noticeably larger than
+/// the original Reminderski, which is what this brings back.
+const DESIGN_PERCENT: i32 = 80;
+
+/// A logical pixel in the design, as an actual pixel on this monitor.
+///
+/// Rounded rather than truncated, because the smallest values here are the letter spacing, and
+/// truncating 1.6 to 1 would take a third off the tracking while the text it spaces lost a fifth.
 pub fn scale(logical: i32, dpi: u32) -> i32 {
-    logical * dpi as i32 / 96
+    let per_logical_pixel = 96 * 100;
+    (logical * DESIGN_PERCENT * dpi as i32 + per_logical_pixel / 2) / per_logical_pixel
 }
 
 /// A fixed-pitch font of a given height in logical pixels, scaled to the monitor.
@@ -217,5 +230,33 @@ pub fn inset(rect: &RECT, horizontal: i32, vertical: i32) -> RECT {
         top: rect.top + vertical,
         right: rect.right - horizontal,
         bottom: rect.bottom - vertical,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// What the monitor the design was drawn against reports.
+    const NORMAL_DPI: u32 = 96;
+
+    #[test]
+    fn the_design_is_drawn_at_its_percentage() {
+        assert_eq!(scale(100, NORMAL_DPI), DESIGN_PERCENT);
+        assert_eq!(scale(520, NORMAL_DPI), 416);
+    }
+
+    #[test]
+    fn a_denser_monitor_gets_proportionally_more_pixels() {
+        assert_eq!(scale(100, 2 * NORMAL_DPI), 2 * DESIGN_PERCENT);
+        assert_eq!(scale(100, 144), 120);
+    }
+
+    /// The values here are single digits, where truncating loses far more than it rounds off.
+    #[test]
+    fn the_smallest_sizes_survive_being_scaled() {
+        assert_eq!(scale(LABEL_TRACKING, NORMAL_DPI), 2);
+        assert_eq!(scale(TITLE_TRACKING, NORMAL_DPI), 2);
+        assert!(scale(1, NORMAL_DPI) > 0, "a hairline may not round away");
     }
 }

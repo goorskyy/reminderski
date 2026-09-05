@@ -6,13 +6,10 @@ moment, fix them together.
 
 ## The notification
 
-- The window (`src/notify.rs`, `WIDTH`/`HEIGHT` = 520x284 at 96 DPI) feels big compared to the
-  original .NET Reminderski. Reads fine on one screen, looks oversized on another. Need to check:
-  - Is it the raw size, or DPI scaling (`scale(...)` in `notify.rs`) making it bigger on some
-    monitors than others?
-  - Compare side-by-side with the .NET version's actual window size.
-  - Whether it can shrink safely without clipping the persona note, the label, or the
-    snooze/done buttons.
+- It reads fine on one screen and looked oversized on another, and only the second half of that
+  was dealt with: the whole design came down to 80% (`DESIGN_PERCENT` in `src/ui.rs`). Whether
+  the difference between the two screens was ever really about their DPI was never answered, so
+  it may yet turn out that one number for every monitor is the wrong shape of fix.
 - Several notifications stack upwards, but the rest do not move down when one is answered.
 - A reminder too long for the window is clipped rather than scrolled.
 - Nothing on the window says that Ctrl+Alt+A reaches it, or that Enter and 1, 2, 3 answer it
