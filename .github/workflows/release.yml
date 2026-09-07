@@ -76,6 +76,10 @@ jobs:
           else
             # A draft, so the notes can be read and edited before anybody downloads anything.
             # Publishing it is one button on the release page.
-            gh release create "$GITHUB_REF_NAME" dist/* --draft --notes-file notes.md \
-              --repo "$GITHUB_REPOSITORY"
+            #
+            # The title is deliberately empty. Left to itself gh names the release after the tag,
+            # and the page then prints the version twice, once as the heading and once as the tag
+            # beside it. With no name GitHub falls back to the tag, which is the version once.
+            gh release create "$GITHUB_REF_NAME" dist/* --draft --title "" \
+              --notes-file notes.md --repo "$GITHUB_REPOSITORY"
           fi
