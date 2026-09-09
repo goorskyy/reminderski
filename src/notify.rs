@@ -34,8 +34,9 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{
     CreateWindowExW, DefWindowProcW, DestroyWindow, GWLP_USERDATA, GetClientRect, GetCursorPos,
     GetWindowLongPtrW, HTCAPTION, IDC_ARROW, IsWindow, KillTimer, LoadCursorW, MB_ICONASTERISK,
     RegisterClassW, SW_SHOWNOACTIVATE, SWP_NOACTIVATE, SWP_NOZORDER, SetTimer, SetWindowLongPtrW,
-    SetWindowPos, ShowWindow, WM_CLOSE, WM_KEYDOWN, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE,
-    WM_NCLBUTTONDOWN, WM_PAINT, WM_TIMER, WNDCLASSW, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_POPUP,
+    SetWindowPos, ShowWindow, WM_CLOSE, WM_DPICHANGED, WM_KEYDOWN, WM_LBUTTONDOWN, WM_LBUTTONUP,
+    WM_MOUSEMOVE, WM_NCLBUTTONDOWN, WM_PAINT, WM_TIMER, WNDCLASSW, WS_EX_TOOLWINDOW, WS_EX_TOPMOST,
+    WS_POPUP,
 };
 
 use crate::persona::{self, Mood};
@@ -110,10 +111,11 @@ struct State {
     hovered: Cell<Option<usize>>,
     pressed: Cell<Option<usize>>,
     tracking: Cell<bool>,
-    dpi: u32,
-    fonts: Fonts,
+    dpi: Cell<u32>,
+    fonts: Cell<Fonts>,
 }
 
+#[derive(Clone, Copy)]
 struct Fonts {
     title: HFONT,
     label: HFONT,
@@ -214,7 +216,7 @@ impl Drop for Notification {
         if !self.finished() {
             unsafe { DestroyWindow(self.window) };
         }
-        self.state.fonts.delete();
+        self.state.fonts.get().delete();
     }
 }
 
@@ -239,9 +241,17 @@ impl State {
             hovered: Cell::new(None),
             pressed: Cell::new(None),
             tracking: Cell::new(false),
-            dpi,
-            fonts: Fonts::new(dpi),
+            dpi: Cell::new(dpi),
+            fonts: Cell::new(Fonts::new(dpi)),
         }
+    }
+
+    /// Redraws at another monitor's scale. The fonts are built for one DPI, so they are
+    /// thrown away and made again rather than stretched.
+    fn adopt_dpi(&self, dpi: u32) {
+        self.dpi.set(dpi);
+        self.fonts.get().delete();
+        self.fonts.set(Fonts::new(dpi));
     }
 
     /// Advances the character and asks to be woken when its current frame runs out.
@@ -459,7 +469,7 @@ unsafe extern "system" fn window_proc(
         return unsafe { DefWindowProcW(window, message, wparam, lparam) };
     }
     let state = unsafe { &*stored };
-    let layout = Layout::of(window, state.dpi);
+    let layout = Layout::of(window, state.dpi.get());
 
     match message {
         WM_PAINT => {
@@ -534,6 +544,27 @@ unsafe extern "system" fn window_proc(
             }
             0
         }
+        // Dragged onto a monitor at another scale. Windows says where the window should go;
+        // the size comes from the design at the new DPI rather than from the suggested
+        // rectangle, so hopping between monitors cannot round the window away.
+        WM_DPICHANGED => {
+            let dpi = (wparam & 0xffff) as u32;
+            state.adopt_dpi(dpi);
+            let suggested = unsafe { &*(lparam as *const RECT) };
+            unsafe {
+                SetWindowPos(
+                    window,
+                    ptr::null_mut(),
+                    suggested.left,
+                    suggested.top,
+                    scale(WIDTH, dpi),
+                    scale(HEIGHT, dpi),
+                    SWP_NOZORDER | SWP_NOACTIVATE,
+                );
+                InvalidateRect(window, ptr::null(), 0);
+            }
+            0
+        }
         WM_CLOSE => {
             unsafe { DestroyWindow(window) };
             0
@@ -596,6 +627,8 @@ fn track_mouse(window: HWND, state: &State) {
 
 /// Draws the whole window into a bitmap and blits it, so nothing flickers as the character moves.
 fn paint(window: HWND, state: &State, layout: &Layout) {
+    let dpi = state.dpi.get();
+    let fonts = state.fonts.get();
     let mut info: PAINTSTRUCT = unsafe { mem::zeroed() };
     let screen = unsafe { BeginPaint(window, &mut info) };
 
@@ -610,7 +643,7 @@ fn paint(window: HWND, state: &State, layout: &Layout) {
     outline(buffer, &client, INK);
 
     fill(buffer, &layout.titlebar, BAR);
-    let title_text = inset(&layout.titlebar, scale(14, state.dpi), 0);
+    let title_text = inset(&layout.titlebar, scale(14, dpi), 0);
     let title = match state.forced_mood.get() {
         Some(mood) => wide(&format!("{TITLE}  [{}]", mood.name())),
         None => wide(TITLE),
@@ -619,51 +652,44 @@ fn paint(window: HWND, state: &State, layout: &Layout) {
         buffer,
         &title_text,
         &title,
-        state.fonts.title,
+        fonts.title,
         BAR_INK,
         TITLE_TRACKING,
-        state.dpi,
+        dpi,
         DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX,
     );
     draw_text(
         buffer,
         &layout.close,
         &wide("[X]"),
-        state.fonts.title,
+        fonts.title,
         BAR_INK,
         0,
-        state.dpi,
+        dpi,
         DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX,
     );
 
     outline(buffer, &layout.face, INK);
-    centred_block(
-        buffer,
-        &layout.face,
-        &state.art(),
-        state.fonts.persona,
-        INK,
-        state.dpi,
-    );
+    centred_block(buffer, &layout.face, &state.art(), fonts.persona, INK, dpi);
 
     draw_text(
         buffer,
         &layout.eyebrow,
         &state.eyebrow,
-        state.fonts.label,
+        fonts.label,
         LABEL,
         LABEL_TRACKING,
-        state.dpi,
+        dpi,
         DT_LEFT | DT_TOP | DT_SINGLELINE | DT_NOPREFIX,
     );
     draw_text(
         buffer,
         &layout.message,
         &state.text,
-        state.fonts.message,
+        fonts.message,
         INK,
         0,
-        state.dpi,
+        dpi,
         DT_LEFT | DT_TOP | DT_WORDBREAK | DT_NOPREFIX,
     );
 
@@ -686,10 +712,10 @@ fn paint(window: HWND, state: &State, layout: &Layout) {
             buffer,
             button,
             &wide(ACTIONS[index].0),
-            state.fonts.button,
+            fonts.button,
             if filled { PAPER } else { INK },
             LABEL_TRACKING,
-            state.dpi,
+            dpi,
             DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX,
         );
     }

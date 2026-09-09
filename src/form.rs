@@ -31,12 +31,12 @@ use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
 use windows_sys::Win32::UI::WindowsAndMessaging::{
     CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW, ES_AUTOHSCROLL,
     ES_AUTOVSCROLL, ES_MULTILINE, ES_WANTRETURN, GWLP_USERDATA, GetClientRect, GetCursorPos,
-    GetMessageW, GetWindowLongPtrW, GetWindowTextLengthW, GetWindowTextW, HTCAPTION, IDC_ARROW,
-    LoadCursorW, MB_ICONERROR, MSG, MoveWindow, PostQuitMessage, RegisterClassW, SW_SHOW,
-    SendMessageW, SetForegroundWindow, SetWindowLongPtrW, SetWindowPos, SetWindowTextW, ShowWindow,
-    TranslateMessage, WM_CTLCOLOREDIT, WM_DESTROY, WM_KEYDOWN, WM_LBUTTONDOWN, WM_LBUTTONUP,
-    WM_MOUSEMOVE, WM_NCLBUTTONDOWN, WM_PAINT, WM_SETFONT, WNDCLASSW, WS_CHILD, WS_POPUP,
-    WS_VISIBLE,
+    GetDlgItem, GetMessageW, GetWindowLongPtrW, GetWindowTextLengthW, GetWindowTextW, HTCAPTION,
+    IDC_ARROW, LoadCursorW, MB_ICONERROR, MSG, MoveWindow, PostQuitMessage, RegisterClassW,
+    SW_SHOW, SWP_NOACTIVATE, SWP_NOZORDER, SendMessageW, SetForegroundWindow, SetWindowLongPtrW,
+    SetWindowPos, SetWindowTextW, ShowWindow, TranslateMessage, WM_CTLCOLOREDIT, WM_DESTROY,
+    WM_DPICHANGED, WM_KEYDOWN, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE, WM_NCLBUTTONDOWN,
+    WM_PAINT, WM_SETFONT, WNDCLASSW, WS_CHILD, WS_POPUP, WS_VISIBLE,
 };
 
 use crate::notify::WM_MOUSELEAVE;
@@ -97,8 +97,8 @@ struct Form {
 }
 
 struct State {
-    dpi: u32,
-    fonts: Fonts,
+    dpi: Cell<u32>,
+    fonts: Cell<Fonts>,
     /// Handed to Windows to paint behind the edit controls, so it must outlive every repaint.
     field_brush: HBRUSH,
     hovered: Cell<Option<usize>>,
@@ -109,6 +109,7 @@ struct State {
     chosen: Cell<Option<usize>>,
 }
 
+#[derive(Clone, Copy)]
 struct Fonts {
     title: HFONT,
     label: HFONT,
@@ -285,51 +286,18 @@ impl Form {
 
         let state = Box::new(State::new(dpi));
         unsafe { SetWindowLongPtrW(window, GWLP_USERDATA, ptr::from_ref(&*state) as isize) };
+        let field_font = state.fonts.get().field as WPARAM;
         for field in [text, when] {
-            unsafe { SendMessageW(field, WM_SETFONT, state.fonts.field as WPARAM, 1) };
+            unsafe { SendMessageW(field, WM_SETFONT, field_font, 1) };
         }
+        place_fields(window, dpi);
 
-        let form = Self {
+        Ok(Self {
             window,
             text,
             when,
             state,
-        };
-        form.place_fields();
-        Ok(form)
-    }
-
-    /// Puts the edit controls inside the boxes drawn for them.
-    ///
-    /// The multiline box fills its frame and its text starts at the top. A single line control
-    /// draws its text at the top too, so the time field is made one line tall and that line is
-    /// centred in the box instead.
-    fn place_fields(&self) {
-        let dpi = self.state.dpi;
-        let layout = Layout::of(self.window, dpi);
-        let inset_by = scale(EDIT_INSET, dpi);
-
-        let text_area = inset(&layout.text_box, inset_by, inset_by / 2);
-        let line = scale(FIELD_SIZE, dpi) * 3 / 2;
-        let box_height = layout.time_box.bottom - layout.time_box.top;
-        let time_area = RECT {
-            top: layout.time_box.top + (box_height - line) / 2,
-            bottom: layout.time_box.top + (box_height - line) / 2 + line,
-            ..inset(&layout.time_box, inset_by, 0)
-        };
-
-        for (field, area) in [(self.text, text_area), (self.when, time_area)] {
-            unsafe {
-                MoveWindow(
-                    field,
-                    area.left,
-                    area.top,
-                    area.right - area.left,
-                    area.bottom - area.top,
-                    1,
-                )
-            };
-        }
+        })
     }
 
     /// What pressing a button means, once the fields have been read.
@@ -364,7 +332,7 @@ impl Form {
 
 impl Drop for Form {
     fn drop(&mut self) {
-        self.state.fonts.delete();
+        self.state.fonts.get().delete();
         if !self.state.field_brush.is_null() {
             unsafe { DeleteObject(self.state.field_brush as _) };
         }
@@ -374,14 +342,22 @@ impl Drop for Form {
 impl State {
     fn new(dpi: u32) -> Self {
         Self {
-            dpi,
-            fonts: Fonts::new(dpi),
+            dpi: Cell::new(dpi),
+            fonts: Cell::new(Fonts::new(dpi)),
             field_brush: unsafe { CreateSolidBrush(PAPER) },
             hovered: Cell::new(None),
             pressed: Cell::new(None),
             tracking: Cell::new(false),
             chosen: Cell::new(None),
         }
+    }
+
+    /// Redraws at another monitor's scale. The fonts are built for one DPI, so they are
+    /// thrown away and made again rather than stretched.
+    fn adopt_dpi(&self, dpi: u32) {
+        self.dpi.set(dpi);
+        self.fonts.get().delete();
+        self.fonts.set(Fonts::new(dpi));
     }
 }
 
@@ -523,6 +499,38 @@ impl Layout {
     }
 }
 
+/// Puts the edit controls inside the boxes drawn for them.
+///
+/// The multiline box fills its frame and its text starts at the top. A single line control
+/// draws its text at the top too, so the time field is made one line tall and that line is
+/// centred in the box instead.
+fn place_fields(window: HWND, dpi: u32) {
+    let layout = Layout::of(window, dpi);
+    let inset_by = scale(EDIT_INSET, dpi);
+
+    let text_area = inset(&layout.text_box, inset_by, inset_by / 2);
+    let line = scale(FIELD_SIZE, dpi) * 3 / 2;
+    let box_height = layout.time_box.bottom - layout.time_box.top;
+    let time_area = RECT {
+        top: layout.time_box.top + (box_height - line) / 2,
+        bottom: layout.time_box.top + (box_height - line) / 2 + line,
+        ..inset(&layout.time_box, inset_by, 0)
+    };
+
+    for (id, area) in [(ID_TEXT, text_area), (ID_WHEN, time_area)] {
+        unsafe {
+            MoveWindow(
+                GetDlgItem(window, id),
+                area.left,
+                area.top,
+                area.right - area.left,
+                area.bottom - area.top,
+                1,
+            )
+        };
+    }
+}
+
 fn create_edit(parent: HWND, id: i32, styles: u32) -> HWND {
     unsafe {
         CreateWindowExW(
@@ -612,7 +620,7 @@ unsafe extern "system" fn window_proc(
         return unsafe { DefWindowProcW(window, message, wparam, lparam) };
     }
     let state = unsafe { &*stored };
-    let layout = Layout::of(window, state.dpi);
+    let layout = Layout::of(window, state.dpi.get());
 
     match message {
         WM_PAINT => {
@@ -672,6 +680,32 @@ unsafe extern "system" fn window_proc(
             unsafe { InvalidateRect(window, ptr::null(), 0) };
             0
         }
+        // Dragged onto a monitor at another scale. Windows says where the window should go; its
+        // size comes from the design at the new DPI rather than from the suggested rectangle, so
+        // that hopping between monitors cannot round the window away.
+        WM_DPICHANGED => {
+            let dpi = (wparam & 0xffff) as u32;
+            state.adopt_dpi(dpi);
+            let suggested = unsafe { &*(lparam as *const RECT) };
+            unsafe {
+                SetWindowPos(
+                    window,
+                    ptr::null_mut(),
+                    suggested.left,
+                    suggested.top,
+                    scale(WIDTH, dpi),
+                    height(dpi),
+                    SWP_NOZORDER | SWP_NOACTIVATE,
+                )
+            };
+            let field_font = state.fonts.get().field as WPARAM;
+            for id in [ID_TEXT, ID_WHEN] {
+                unsafe { SendMessageW(GetDlgItem(window, id), WM_SETFONT, field_font, 1) };
+            }
+            place_fields(window, dpi);
+            unsafe { InvalidateRect(window, ptr::null(), 0) };
+            0
+        }
         WM_DESTROY => {
             // Ends run_modal_loop. The resulting WM_QUIT is consumed by that loop's GetMessageW,
             // so the application's main loop never sees it.
@@ -701,6 +735,8 @@ fn track_mouse(window: HWND, state: &State) {
 
 /// Draws the whole window into a bitmap and blits it, so nothing flickers as buttons light up.
 fn paint(window: HWND, state: &State, layout: &Layout) {
+    let dpi = state.dpi.get();
+    let fonts = state.fonts.get();
     let mut info: PAINTSTRUCT = unsafe { mem::zeroed() };
     let screen = unsafe { BeginPaint(window, &mut info) };
 
@@ -717,22 +753,22 @@ fn paint(window: HWND, state: &State, layout: &Layout) {
     fill(buffer, &layout.titlebar, BAR);
     draw_text(
         buffer,
-        &inset(&layout.titlebar, scale(14, state.dpi), 0),
+        &inset(&layout.titlebar, scale(14, dpi), 0),
         &wide(TITLE),
-        state.fonts.title,
+        fonts.title,
         BAR_INK,
         TITLE_TRACKING,
-        state.dpi,
+        dpi,
         DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX,
     );
     draw_text(
         buffer,
         &layout.close,
         &wide("[X]"),
-        state.fonts.title,
+        fonts.title,
         BAR_INK,
         0,
-        state.dpi,
+        dpi,
         DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX,
     );
 
@@ -745,10 +781,10 @@ fn paint(window: HWND, state: &State, layout: &Layout) {
             buffer,
             rect,
             &wide(caption),
-            state.fonts.label,
+            fonts.label,
             LABEL,
             LABEL_TRACKING,
-            state.dpi,
+            dpi,
             DT_LEFT | DT_TOP | DT_SINGLELINE | DT_NOPREFIX,
         );
     }
@@ -759,10 +795,10 @@ fn paint(window: HWND, state: &State, layout: &Layout) {
         buffer,
         &layout.hint,
         &wide(HINT),
-        state.fonts.hint,
+        fonts.hint,
         LABEL,
         0,
-        state.dpi,
+        dpi,
         DT_LEFT | DT_TOP | DT_SINGLELINE | DT_NOPREFIX,
     );
 
@@ -790,10 +826,10 @@ fn paint(window: HWND, state: &State, layout: &Layout) {
             buffer,
             button,
             &wide(caption),
-            state.fonts.button,
+            fonts.button,
             if filled { PAPER } else { INK },
             LABEL_TRACKING,
-            state.dpi,
+            dpi,
             DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX,
         );
     }
