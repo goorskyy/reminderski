@@ -1,4 +1,4 @@
-# Features
+00# Features
 
 Ideas and potential future features for Reminderski.
 
@@ -16,22 +16,21 @@ position rather than a feature.
 | 3 | Tune the two windows | Low | Spacing, proportions and weight across the form and the notification, once they have been lived with. The notification feeling oversized is already written down in FINDINGS.md. |
 | 4 | Recurring reminders | Medium | Support reminders that repeat on a schedule. The one capability of the Slack workflow that is missing outright. |
 | 5 | Custom snooze durations | Low | Allow configurable or additional quick snooze options. These are the most-pressed buttons in the application. |
-| 6 | Configurable shortcut | Low | Let the user change the global capture shortcut, which is fixed at Ctrl+Alt+R and may already belong to something else. |
-| 7 | More reminder syntax | Low | Expand Slack-style time expressions further. Day names are understood; `in 2 weeks` and month ends are not. |
-| 8 | Live dashboard | Low | Push changes to the open page instead of re-reading every fifteen seconds. |
-| 9 | Search | Medium | Search active and historical reminders. Worth more the longer the history gets. |
-| 10 | winget package | Medium | Publish a winget manifest so Reminderski can be installed with `winget install`, pointing at the GitHub release. |
-| 11 | Import/export | Medium | Export and restore reminder data. Half free already, since the store is one text file. |
-| 12 | URL capture | Medium | Capture a URL together with selected text when available. |
-| 13 | Application context | Medium | Store the source application/window together with a reminder. |
-| 14 | Multiple personas | Low | Different ASCII personas for notifications. |
-| 15 | CLI client | Medium | Terminal client for creating, listing, completing and snoozing reminders. |
-| 16 | Browser integration | Medium | Dedicated browser integration for capturing reminders. |
-| 17 | API | High | Provide an API for external clients and integrations. Everything below this line wants it first. |
-| 18 | Slack integration | Medium | Create or manage Reminderski reminders through Slack. |
-| 19 | Teams integration | Medium | Create or manage Reminderski reminders through Microsoft Teams. |
-| 20 | Calendar integration | High | Connect reminders with calendar events. |
-| 21 | Cloud sync | High | Optional backend allowing reminders to be shared across devices. |
-| 22 | Local network sync | High | Synchronize clients without relying on a cloud service. |
-| 23 | macOS app | High | Desktop client with the same core workflow as Windows. |
-| 24 | Mobile app | High | Mobile client sharing the same reminder ecosystem. |
+| 6 | More reminder syntax | Low | Expand Slack-style time expressions further. Day names are understood; `in 2 weeks` and month ends are not. |
+| 7 | Live dashboard | Low | Push changes to the open page instead of re-reading every fifteen seconds. |
+| 8 | Search | Medium | Search active and historical reminders. Worth more the longer the history gets. |
+| 9 | winget package | Medium | Publish a winget manifest so Reminderski can be installed with `winget install`, pointing at the GitHub release. |
+| 10 | Import/export | Medium | Export and restore reminder data. Half free already, since the store is one text file. |
+| 11 | URL capture | Medium | Capture a URL together with selected text when available. |
+| 12 | Application context | Medium | Store the source application/window together with a reminder. |
+| 13 | Multiple personas | Low | Different ASCII personas for notifications. |
+| 14 | CLI client | Medium | Terminal client for creating, listing, completing and snoozing reminders. |
+| 15 | Browser integration | Medium | Dedicated browser integration for capturing reminders. |
+| 16 | API | High | Provide an API for external clients and integrations. Everything below this line wants it first. |
+| 17 | Slack integration | Medium | Create or manage Reminderski reminders through Slack. |
+| 18 | Teams integration | Medium | Create or manage Reminderski reminders through Microsoft Teams. |
+| 19 | Calendar integration | High | Connect reminders with calendar events. |
+| 20 | Cloud sync | High | Optional backend allowing reminders to be shared across devices. |
+| 21 | Local network sync | High | Synchronize clients without relying on a cloud service. |
+| 22 | macOS app | High | Desktop client with the same core workflow as Windows. |
+| 23 | Mobile app | High | Mobile client sharing the same reminder ecosystem. |

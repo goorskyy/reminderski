@@ -11,6 +11,7 @@ mod log;
 mod notify;
 mod persona;
 mod reminder;
+mod settings;
 mod store;
 mod tray;
 mod ui;
@@ -21,9 +22,7 @@ use std::ptr;
 use std::sync::{Arc, Mutex};
 
 use windows_sys::Win32::System::Threading::GetCurrentThreadId;
-use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
-    MOD_ALT, MOD_CONTROL, MOD_NOREPEAT, RegisterHotKey, UnregisterHotKey,
-};
+use windows_sys::Win32::UI::Input::KeyboardAndMouse::{RegisterHotKey, UnregisterHotKey};
 use windows_sys::Win32::UI::WindowsAndMessaging::{
     DispatchMessageW, MB_ICONERROR, MB_OK, MSG, MWMO_INPUTAVAILABLE, MessageBoxW,
     MsgWaitForMultipleObjectsEx, PM_REMOVE, PeekMessageW, QS_ALLINPUT, SetForegroundWindow,
@@ -32,14 +31,13 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{
 
 use crate::notify::{Notification, Outcome};
 use crate::reminder::{Reminder, State};
+use crate::settings::Shortcut;
 use crate::store::Store;
 use crate::tray::Tray;
 use crate::ui::wide;
 
 const CAPTURE_HOTKEY: i32 = 1;
 const ANSWER_HOTKEY: i32 = 2;
-const VK_R: u32 = 0x52;
-const VK_A: u32 = 0x41;
 
 /// Wait forever, when there is nothing due to wait for.
 const INFINITE: u32 = u32::MAX;
@@ -91,6 +89,7 @@ fn run() -> io::Result<()> {
 
     let path = store::default_path()?;
     log::write_to(path.with_file_name("reminderski.log"));
+    let settings = settings::load(&path.with_file_name("settings.txt"));
     let store = Arc::new(Mutex::new(Store::open(path)?));
 
     // The dashboard wakes this thread after changing a reminder, since the loop may otherwise
@@ -107,27 +106,34 @@ fn run() -> io::Result<()> {
     // A new release is a new download, which may not have landed where the last one did.
     autostart::follow_the_executable();
 
-    let tray = Tray::show(address)?;
+    let tray = Tray::show(address, settings.capture)?;
 
     // Without the capture shortcut there is no application, so failing to take it is fatal. It
     // is also a combination other applications want, and losing it is the likeliest reason this
-    // will not start on somebody's machine, so the message names it rather than leaving them
-    // with an error number.
-    register_hotkey(CAPTURE_HOTKEY, VK_R).map_err(|error| {
+    // will not start on somebody's machine, so the message names it and says where to change it
+    // rather than leaving them with an error number.
+    let capture = settings::describe(settings.capture);
+    register_hotkey(CAPTURE_HOTKEY, settings.capture).map_err(|error| {
         io::Error::new(
             error.kind(),
-            format!("Ctrl+Alt+R already belongs to another application. ({error})"),
+            format!(
+                "{capture} already belongs to another application.\n\n\
+                 Choose another one in settings.txt, beside the reminders."
+            ),
         )
     })?;
     // Answering one is a convenience by comparison. If something else already owns the
     // combination, say so in the log and carry on: the mouse still works.
-    if let Err(error) = register_hotkey(ANSWER_HOTKEY, VK_A) {
+    if let Err(error) = register_hotkey(ANSWER_HOTKEY, settings.answer) {
         log::problem(&format!("the answer shortcut is not available: {error}"));
     }
 
     // Double-clicking an executable that goes on to show nothing at all looks like nothing
     // happened, which is the whole of what the shortcut needs saying about.
-    tray.announce("Reminderski is running", "Ctrl+Alt+R to set a reminder.");
+    tray.announce(
+        "Reminderski is running",
+        &format!("{capture} to set a reminder."),
+    );
 
     let mut app = App {
         store,
@@ -145,15 +151,9 @@ fn run() -> io::Result<()> {
 
 /// A null window handle posts WM_HOTKEY to this thread's message queue, so no window is needed
 /// to receive it.
-fn register_hotkey(id: i32, key: u32) -> io::Result<()> {
-    let registered = unsafe {
-        RegisterHotKey(
-            ptr::null_mut(),
-            id,
-            MOD_CONTROL | MOD_ALT | MOD_NOREPEAT,
-            key,
-        )
-    };
+fn register_hotkey(id: i32, shortcut: Shortcut) -> io::Result<()> {
+    let registered =
+        unsafe { RegisterHotKey(ptr::null_mut(), id, shortcut.modifiers, shortcut.key) };
     if registered == 0 {
         return Err(io::Error::last_os_error());
     }

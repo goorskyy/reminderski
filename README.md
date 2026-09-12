@@ -39,7 +39,8 @@ quit, open the dashboard, or start it with Windows.
 
 ## Etc
 
-Reminders live in `%APPDATA%\Reminderski\reminders.txt`, one per line.
+Reminders live in `%APPDATA%\Reminderski\reminders.txt`, one per line. The shortcuts are in
+`settings.txt` beside it, or on the tray menu under Settings.
 
 [Known problems](FINDINGS.md) · [Ideas](FEATURES.md) · [Building](docs/building.md) ·
 [House rules](AGENTS.md) · [MIT](LICENSE)

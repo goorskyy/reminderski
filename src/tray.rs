@@ -28,17 +28,18 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{
     WM_COMMAND, WM_LBUTTONDBLCLK, WM_NULL, WM_RBUTTONUP, WNDCLASSW, WS_OVERLAPPED,
 };
 
+use crate::settings::{self, Shortcut};
 use crate::ui::{BAR, BAR_INK, fill, outline, wide};
 use crate::{autostart, log};
 
 const CLASS_NAME: &str = "ReminderskiTray";
-const TOOLTIP: &str = "Reminderski — Ctrl+Alt+R to capture";
 
 /// The message the shell sends us about the icon, and the items on its menu.
 const TRAY_MESSAGE: u32 = WM_APP + 1;
 const ID_DASHBOARD: usize = 1;
-const ID_AUTOSTART: usize = 2;
-const ID_QUIT: usize = 3;
+const ID_SETTINGS: usize = 2;
+const ID_AUTOSTART: usize = 3;
+const ID_QUIT: usize = 4;
 
 /// The dashboard address, so the menu can open it. Set once, before the icon appears.
 static ADDRESS: OnceLock<String> = OnceLock::new();
@@ -50,11 +51,14 @@ pub struct Tray {
 
 impl Tray {
     /// `address` is where the dashboard is listening, when it managed to start.
-    pub fn show(address: Option<String>) -> io::Result<Self> {
+    pub fn show(address: Option<String>, capture: Shortcut) -> io::Result<Self> {
         if let Some(address) = address {
             let _ = ADDRESS.set(address);
         }
         register_class()?;
+
+        // The tip names the shortcut, which is no longer a fact the application can assume.
+        let tooltip = format!("Reminderski — {} to capture", settings::describe(capture));
 
         // Never shown. It exists because the shell needs a window to send the icon's messages
         // to, and because a popup menu needs one to belong to.
@@ -62,7 +66,7 @@ impl Tray {
             CreateWindowExW(
                 0,
                 wide(CLASS_NAME).as_ptr(),
-                wide(TOOLTIP).as_ptr(),
+                wide(&tooltip).as_ptr(),
                 WS_OVERLAPPED,
                 0,
                 0,
@@ -88,7 +92,7 @@ impl Tray {
             hIcon: icon,
             ..unsafe { mem::zeroed() }
         };
-        copy_into(&mut data.szTip, TOOLTIP);
+        copy_into(&mut data.szTip, &tooltip);
 
         if unsafe { Shell_NotifyIconW(NIM_ADD, &data) } == 0 {
             let error = io::Error::last_os_error();
@@ -271,6 +275,10 @@ unsafe extern "system" fn window_proc(
             open_dashboard();
             0
         }
+        WM_COMMAND if (wparam & 0xffff) == ID_SETTINGS => {
+            open_settings();
+            0
+        }
         WM_COMMAND if (wparam & 0xffff) == ID_AUTOSTART => {
             let wanted = !autostart::is_enabled();
             if let Err(error) = autostart::set(wanted) {
@@ -288,6 +296,27 @@ unsafe extern "system" fn window_proc(
 }
 
 /// Hands the address to whatever the machine opens web pages with.
+/// Opens the settings file in whatever this machine edits text with.
+///
+/// The path is worked out again rather than carried here. It is the one the application read at
+/// startup, and by the time there is a menu to click, that read has already succeeded.
+fn open_settings() {
+    let Ok(path) = crate::store::default_path() else {
+        return;
+    };
+    let settings = path.with_file_name("settings.txt");
+    unsafe {
+        ShellExecuteW(
+            ptr::null_mut(),
+            wide("open").as_ptr(),
+            wide(&settings.to_string_lossy()).as_ptr(),
+            ptr::null(),
+            ptr::null(),
+            SW_SHOWNORMAL,
+        )
+    };
+}
+
 fn open_dashboard() {
     let Some(address) = ADDRESS.get() else {
         return;
@@ -331,6 +360,7 @@ fn show_menu(window: HWND) {
             ID_AUTOSTART,
             wide("Start with Windows").as_ptr(),
         );
+        AppendMenuW(menu, MF_STRING, ID_SETTINGS, wide("Settings").as_ptr());
         AppendMenuW(menu, MF_STRING, ID_QUIT, wide("Quit Reminderski").as_ptr());
     }
 
