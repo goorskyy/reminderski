@@ -1,25 +1,35 @@
-# Reminderski
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/logo-dark.png">
+    <img src="docs/logo-light.png" width="470" alt="Reminderski">
+  </picture>
+</p>
 
-[![CI](https://github.com/goorskyy/reminderski/actions/workflows/ci.yml/badge.svg)](https://github.com/goorskyy/reminderski/actions/workflows/ci.yml)
+<p align="center">
+  Local reminders for Windows.<br>
+  Select text, press <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>R</kbd>, say when.
+</p>
 
-Local reminders for Windows. Select text, press **Ctrl+Alt+R**, say when.
+<p align="center">
+  <a href="https://github.com/goorskyy/reminderski/actions/workflows/ci.yml"><img src="https://github.com/goorskyy/reminderski/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <img src="https://img.shields.io/badge/license-MIT-blue" alt="MIT">
+</p>
 
-![A reminder coming back, having been put off nine times](docs/screenshots/notification.png)
+<p align="center">
+  <img src="docs/screenshots/notification.png" width="520" alt="A reminder coming back, having been put off nine times">
+</p>
 
-It waits in the notification area and costs nothing until it has something to say. When a reminder
-falls due it appears in the corner without stealing the focus, so it never swallows what you are
-typing: Ctrl+Alt+A to reach it, then Enter for Done or 1, 2, 3 to put it off.
+It waits in the notification area and costs nothing until it has something to say. A reminder that
+falls due never steals the focus, so it cannot swallow what you are typing: <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>A</kbd>
+to reach it, then <kbd>Enter</kbd> for done, <kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd> to put it off.
 
 Nothing leaves the machine.
 
 ## Install
 
 Download the `.exe` from the [latest release](https://github.com/goorskyy/reminderski/releases/latest)
-and run it. Nothing to install, nothing else to download. Take the `aarch64` one on an ARM64
-machine.
-
-An `R` appears in the notification area. Right-click it to quit, to open the dashboard, or to
-start it with Windows.
+and run it. Nothing to install. An `R` appears in the notification area; right-click it to quit,
+open the dashboard, or start it with Windows.
 
 ## When
 
@@ -29,9 +39,7 @@ start it with Windows.
 
 ## Etc
 
-Reminders are kept in `%APPDATA%\Reminderski\reminders.txt`, one per line.
+Reminders live in `%APPDATA%\Reminderski\reminders.txt`, one per line.
 
 [Known problems](FINDINGS.md) · [Ideas](FEATURES.md) · [Building](docs/building.md) ·
-[House rules](AGENTS.md)
-
-MIT. See [`LICENSE`](LICENSE).
+[House rules](AGENTS.md) · [MIT](LICENSE)
