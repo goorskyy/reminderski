@@ -25,14 +25,16 @@ use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
     MOD_ALT, MOD_CONTROL, MOD_NOREPEAT, RegisterHotKey, UnregisterHotKey,
 };
 use windows_sys::Win32::UI::WindowsAndMessaging::{
-    DispatchMessageW, MSG, MWMO_INPUTAVAILABLE, MsgWaitForMultipleObjectsEx, PM_REMOVE,
-    PeekMessageW, QS_ALLINPUT, SetForegroundWindow, TranslateMessage, WM_HOTKEY, WM_QUIT,
+    DispatchMessageW, MB_ICONERROR, MB_OK, MSG, MWMO_INPUTAVAILABLE, MessageBoxW,
+    MsgWaitForMultipleObjectsEx, PM_REMOVE, PeekMessageW, QS_ALLINPUT, SetForegroundWindow,
+    TranslateMessage, WM_HOTKEY, WM_QUIT,
 };
 
 use crate::notify::{Notification, Outcome};
 use crate::reminder::{Reminder, State};
 use crate::store::Store;
 use crate::tray::Tray;
+use crate::ui::wide;
 
 const CAPTURE_HOTKEY: i32 = 1;
 const ANSWER_HOTKEY: i32 = 2;
@@ -54,21 +56,46 @@ const LONGEST_WAIT: u32 = 60_000;
 struct App {
     store: Arc<Mutex<Store>>,
     showing: Vec<Notification>,
+    /// Kept here so that storing a reminder can say so, and dropped with the application, which
+    /// is what puts the icon away again.
+    tray: Tray,
 }
 
-fn main() -> io::Result<()> {
+fn main() {
+    if let Err(error) = run() {
+        refuse_to_start(&error);
+    }
+}
+
+/// Says why it will not start, somewhere somebody will see it.
+///
+/// There is no console to print to, and the thing that failed may be the tray icon itself, so
+/// an application that gives up quietly is indistinguishable from one that started and did
+/// nothing. That is the failure here worth a window of its own.
+fn refuse_to_start(error: &io::Error) {
+    log::problem(&format!("could not start: {error}"));
+
+    let text = wide(&format!("Reminderski could not start.\n\n{error}"));
+    unsafe {
+        MessageBoxW(
+            ptr::null_mut(),
+            text.as_ptr(),
+            wide("Reminderski").as_ptr(),
+            MB_ICONERROR | MB_OK,
+        )
+    };
+}
+
+fn run() -> io::Result<()> {
     capture::ignore_self_inflicted_ctrl_c();
 
     let path = store::default_path()?;
     log::write_to(path.with_file_name("reminderski.log"));
-    let mut app = App {
-        store: Arc::new(Mutex::new(Store::open(path)?)),
-        showing: Vec::new(),
-    };
+    let store = Arc::new(Mutex::new(Store::open(path)?));
 
     // The dashboard wakes this thread after changing a reminder, since the loop may otherwise
     // be asleep with nothing due for an hour.
-    let address = match dashboard::start(app.store.clone(), unsafe { GetCurrentThreadId() }) {
+    let address = match dashboard::start(store.clone(), unsafe { GetCurrentThreadId() }) {
         Ok(address) => Some(address),
         Err(error) => {
             // A dashboard that will not start is no reason to refuse to remind anybody.
@@ -80,17 +107,33 @@ fn main() -> io::Result<()> {
     // A new release is a new download, which may not have landed where the last one did.
     autostart::follow_the_executable();
 
-    // Held until the loop ends, which is what puts the icon away again.
-    let _tray = Tray::show(address)?;
+    let tray = Tray::show(address)?;
 
-    // Without the capture shortcut there is no application, so failing to take it is fatal.
-    register_hotkey(CAPTURE_HOTKEY, VK_R)?;
+    // Without the capture shortcut there is no application, so failing to take it is fatal. It
+    // is also a combination other applications want, and losing it is the likeliest reason this
+    // will not start on somebody's machine, so the message names it rather than leaving them
+    // with an error number.
+    register_hotkey(CAPTURE_HOTKEY, VK_R).map_err(|error| {
+        io::Error::new(
+            error.kind(),
+            format!("Ctrl+Alt+R already belongs to another application. ({error})"),
+        )
+    })?;
     // Answering one is a convenience by comparison. If something else already owns the
     // combination, say so in the log and carry on: the mouse still works.
     if let Err(error) = register_hotkey(ANSWER_HOTKEY, VK_A) {
         log::problem(&format!("the answer shortcut is not available: {error}"));
     }
 
+    // Double-clicking an executable that goes on to show nothing at all looks like nothing
+    // happened, which is the whole of what the shortcut needs saying about.
+    tray.announce("Reminderski is running", "Ctrl+Alt+R to set a reminder.");
+
+    let mut app = App {
+        store,
+        showing: Vec::new(),
+        tray,
+    };
     app.run();
 
     unsafe {
@@ -300,16 +343,36 @@ impl App {
 
         match form::show(captured.as_deref().unwrap_or_default()) {
             Ok(Some(entry)) => {
+                let when = reminder::describe_due(entry.delay);
                 // The form has closed, so the lock is only taken now and let go immediately.
-                let mut store = self
-                    .store
-                    .lock()
-                    .expect("the reminders are no longer writable");
-                store
-                    .reminders
-                    .push(Reminder::due_in(entry.delay, entry.text));
-                if let Err(error) = store.save() {
-                    log::problem(&format!("could not store the reminder: {error}"));
+                let stored = {
+                    let mut store = self
+                        .store
+                        .lock()
+                        .expect("the reminders are no longer writable");
+                    store
+                        .reminders
+                        .push(Reminder::due_in(entry.delay, entry.text));
+                    store.save()
+                };
+
+                match stored {
+                    Ok(()) => self
+                        .tray
+                        .announce("Reminder set", &format!("Will remind you {when}.")),
+                    // The reminder is in memory either way and will still arrive today. Saying
+                    // it was set and leaving out that it will not outlive the application would
+                    // be the more comfortable of the two lies.
+                    Err(error) => {
+                        log::problem(&format!("could not store the reminder: {error}"));
+                        self.tray.announce(
+                            "Reminder set, but not saved",
+                            &format!(
+                                "Will remind you {when}. The reminder file could not be written, \
+                                 so it will not survive a restart."
+                            ),
+                        );
+                    }
                 }
             }
             Ok(None) => {}

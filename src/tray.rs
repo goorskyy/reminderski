@@ -17,8 +17,8 @@ use windows_sys::Win32::Graphics::Gdi::{
 };
 use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows_sys::Win32::UI::Shell::{
-    NIF_ICON, NIF_MESSAGE, NIF_TIP, NIM_ADD, NIM_DELETE, NOTIFYICONDATAW, Shell_NotifyIconW,
-    ShellExecuteW,
+    NIF_ICON, NIF_INFO, NIF_MESSAGE, NIF_TIP, NIIF_NONE, NIM_ADD, NIM_DELETE, NIM_MODIFY,
+    NOTIFYICONDATAW, Shell_NotifyIconW, ShellExecuteW,
 };
 use windows_sys::Win32::UI::WindowsAndMessaging::{
     AppendMenuW, CreateIconIndirect, CreatePopupMenu, CreateWindowExW, DefWindowProcW, DestroyIcon,
@@ -88,8 +88,7 @@ impl Tray {
             hIcon: icon,
             ..unsafe { mem::zeroed() }
         };
-        let tip = wide(TOOLTIP);
-        data.szTip[..tip.len()].copy_from_slice(&tip);
+        copy_into(&mut data.szTip, TOOLTIP);
 
         if unsafe { Shell_NotifyIconW(NIM_ADD, &data) } == 0 {
             let error = io::Error::last_os_error();
@@ -99,6 +98,43 @@ impl Tray {
 
         Ok(Self { window, icon })
     }
+}
+
+impl Tray {
+    /// Says something over the icon, in the balloon the shell puts there.
+    ///
+    /// Whether it is seen is not ours to decide: notifications can be turned off per
+    /// application, and the shell holds them back while the screen is being shared. Nothing
+    /// here depends on one arriving, which is why a refusal is not reported.
+    pub fn announce(&self, title: &str, text: &str) {
+        let mut data = NOTIFYICONDATAW {
+            cbSize: mem::size_of::<NOTIFYICONDATAW>() as u32,
+            hWnd: self.window,
+            uID: 1,
+            uFlags: NIF_INFO,
+            dwInfoFlags: NIIF_NONE,
+            ..unsafe { mem::zeroed() }
+        };
+        copy_into(&mut data.szInfoTitle, title);
+        copy_into(&mut data.szInfo, text);
+
+        unsafe { Shell_NotifyIconW(NIM_MODIFY, &data) };
+    }
+}
+
+/// Fills one of the shell's fixed-width fields, cutting the text short rather than overrunning.
+///
+/// The balloon holds 256 characters and its heading 64, which a reminder can exceed. Losing the
+/// end of a sentence is better than losing the message.
+fn copy_into(field: &mut [u16], text: &str) {
+    let source = wide(text);
+    if source.len() <= field.len() {
+        field[..source.len()].copy_from_slice(&source);
+        return;
+    }
+    let kept = field.len() - 1;
+    field[..kept].copy_from_slice(&source[..kept]);
+    field[kept] = 0;
 }
 
 impl Drop for Tray {

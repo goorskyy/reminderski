@@ -70,6 +70,31 @@ pub fn parse_when(input: &str) -> Option<Duration> {
 
 /// The same, with the current local time of day and weekday supplied, which is what the tests
 /// exercise.
+/// How to say when a reminder will arrive, given the delay the form worked out.
+///
+/// Arithmetic on the time of day rather than on a date. A reminder is set for hours or a few days
+/// ahead and then answered, so the clock and how many sleeps away it is say everything somebody
+/// wants read back to them, and no month lengths have to be known to work it out.
+pub fn describe_due(delay: Duration) -> String {
+    describe_due_at(delay, local_time_of_day())
+}
+
+fn describe_due_at(delay: Duration, now: u32) -> String {
+    const DAY: u64 = 24 * 60 * 60;
+
+    let target = u64::from(now) + delay.as_secs();
+    let days = target / DAY;
+    let clock = target % DAY;
+    let hours = clock / 3600;
+    let minutes = (clock % 3600) / 60;
+
+    match days {
+        0 => format!("at {hours:02}:{minutes:02}"),
+        1 => format!("tomorrow at {hours:02}:{minutes:02}"),
+        _ => format!("in {days} days, at {hours:02}:{minutes:02}"),
+    }
+}
+
 fn parse_when_at(input: &str, now: u32, today: u16) -> Option<Duration> {
     let lowered = input.trim().to_ascii_lowercase();
 
@@ -257,6 +282,35 @@ fn local_weekday() -> u16 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Seconds into the day, so the cases below read as clock times.
+    fn at(hour: u32, minute: u32) -> u32 {
+        hour * 3600 + minute * 60
+    }
+
+    #[test]
+    fn a_reminder_later_today_is_named_by_the_clock() {
+        let described = describe_due_at(Duration::from_secs(40 * 60), at(12, 0));
+        assert_eq!(described, "at 12:40");
+    }
+
+    #[test]
+    fn crossing_midnight_is_tomorrow_rather_than_a_late_hour() {
+        let described = describe_due_at(Duration::from_secs(2 * 3600), at(23, 30));
+        assert_eq!(described, "tomorrow at 01:30");
+    }
+
+    #[test]
+    fn further_out_is_counted_in_days() {
+        let described = describe_due_at(Duration::from_secs(3 * 24 * 3600), at(9, 15));
+        assert_eq!(described, "in 3 days, at 09:15");
+    }
+
+    #[test]
+    fn the_clock_is_written_the_way_the_windows_write_it() {
+        let described = describe_due_at(Duration::from_secs(45 * 60), at(8, 20));
+        assert_eq!(described, "at 09:05");
+    }
 
     /// 10:00 on a Wednesday, the reference "now" for the absolute cases. Midweek, so that a day
     /// name can be tested in both directions.
