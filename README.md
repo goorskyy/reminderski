@@ -28,8 +28,8 @@ Nothing leaves the machine.
 ## Install
 
 Download the `.exe` from the [latest release](https://github.com/goorskyy/reminderski/releases/latest)
-and run it. Nothing to install. An `R` appears in the notification area; right-click it to quit,
-open the dashboard, or start it with Windows.
+and run it. Nothing to install. The note appears in the notification area; right-click it to
+quit, open the dashboard, or start it with Windows.
 
 ## When
 

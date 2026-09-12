@@ -2,8 +2,8 @@
 //! way to stop it now that there is no console to press Ctrl+C in.
 //!
 //! The icon is drawn rather than shipped as a resource, which keeps the build to `cargo build`
-//! with no resource compiler in it. A black tile with a white R is also what the title bars
-//! look like, so it belongs to the same design.
+//! with no resource compiler in it. It is the note the notifications carry, reduced to the few
+//! rectangles that survive being sixteen pixels across, on the black tile the title bars use.
 
 use std::io;
 use std::mem;
@@ -12,9 +12,8 @@ use std::sync::OnceLock;
 
 use windows_sys::Win32::Foundation::{HWND, LPARAM, LRESULT, POINT, RECT, WPARAM};
 use windows_sys::Win32::Graphics::Gdi::{
-    CreateBitmap, CreateCompatibleBitmap, CreateCompatibleDC, DT_CENTER, DT_NOPREFIX,
-    DT_SINGLELINE, DT_VCENTER, DeleteDC, DeleteObject, GetDC, HBITMAP, ReleaseDC, SelectObject,
-    SetBkMode, TRANSPARENT,
+    CreateBitmap, CreateCompatibleBitmap, CreateCompatibleDC, DeleteDC, DeleteObject, GetDC,
+    HBITMAP, HDC, ReleaseDC, SelectObject,
 };
 use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows_sys::Win32::UI::Shell::{
@@ -29,7 +28,7 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{
     WM_COMMAND, WM_LBUTTONDBLCLK, WM_NULL, WM_RBUTTONUP, WNDCLASSW, WS_OVERLAPPED,
 };
 
-use crate::ui::{BAR, BAR_INK, draw_text, fill, mono_font, wide};
+use crate::ui::{BAR, BAR_INK, fill, outline, wide};
 use crate::{autostart, log};
 
 const CLASS_NAME: &str = "ReminderskiTray";
@@ -119,7 +118,7 @@ impl Drop for Tray {
     }
 }
 
-/// A black tile with a white R, at whatever size the shell asks icons to be.
+/// The note, at whatever size the shell asks icons to be.
 fn draw_icon() -> HICON {
     let width = unsafe { GetSystemMetrics(SM_CXSMICON) };
     let height = unsafe { GetSystemMetrics(SM_CYSMICON) };
@@ -136,21 +135,7 @@ fn draw_icon() -> HICON {
         bottom: height,
     };
     fill(buffer, &square, BAR);
-    unsafe { SetBkMode(buffer, TRANSPARENT as i32) };
-
-    // The letter is asked for at the tile's height, which the icon sizes are a multiple of, so
-    // this comes out the same shape however far the display is scaled.
-    let font = mono_font(96, height * 3 / 4, true);
-    draw_text(
-        buffer,
-        &square,
-        &wide("R"),
-        font,
-        BAR_INK,
-        0,
-        96,
-        DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX,
-    );
+    draw_note(buffer, width, height);
 
     // An all-zero mask means every pixel of the tile is opaque.
     let mask: HBITMAP = unsafe { CreateBitmap(width, height, 1, 1, ptr::null()) };
@@ -165,13 +150,42 @@ fn draw_icon() -> HICON {
 
     unsafe {
         SelectObject(buffer, previous);
-        DeleteObject(font as _);
         DeleteObject(mask as _);
         DeleteObject(colour as _);
         DeleteDC(buffer);
         ReleaseDC(ptr::null_mut(), screen);
     }
     icon
+}
+
+/// The pinned note, in the fewest rectangles it can be recognised from.
+///
+/// Every position is a fraction of the tile rather than a fixed pixel count, because the shell
+/// asks for sixteen, twenty or twenty-four across depending on how far the display is scaled and
+/// the mark has to hold together at all three. The wavy lower edge and the (o) of the pin are a
+/// pixel each at the smallest size, so the pin is kept as a dot and the wave is dropped.
+fn draw_note(hdc: HDC, width: i32, height: i32) {
+    // Sixteenths of the tile: the size the mark was drawn at, so the fractions read as pixels.
+    let across = |sixteenths: i32| width * sixteenths / 16;
+    let down = |sixteenths: i32| height * sixteenths / 16;
+    let box_of = |left, top, right, bottom| RECT {
+        left: across(left),
+        top: down(top),
+        right: across(right),
+        bottom: down(bottom),
+    };
+
+    let pin = box_of(7, 1, 9, 3);
+    let note = box_of(2, 4, 14, 14);
+    let left_eye = box_of(4, 7, 6, 9);
+    let right_eye = box_of(10, 7, 12, 9);
+    let mouth = box_of(6, 11, 10, 12);
+
+    fill(hdc, &pin, BAR_INK);
+    outline(hdc, &note, BAR_INK);
+    fill(hdc, &left_eye, BAR_INK);
+    fill(hdc, &right_eye, BAR_INK);
+    fill(hdc, &mouth, BAR_INK);
 }
 
 fn register_class() -> io::Result<()> {
