@@ -4,3 +4,6 @@
 # IntelliJ IDEA project files
 /.idea/
 *.iml
+
+# Private plan, kept out of the public repository
+/ROADMAP.md
