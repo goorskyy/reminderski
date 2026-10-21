@@ -40,6 +40,7 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{
 };
 
 use crate::persona::{self, Mood};
+use crate::reminder::Id;
 use crate::ui::{
     BAR, BAR_INK, BUTTON_SIZE, HOVER, HOVER_FILLED, INK, LABEL, LABEL_SIZE, LABEL_TRACKING,
     MESSAGE_SIZE, PAPER, PERSONA_SIZE, TITLE_SIZE, TITLE_TRACKING, centred_block, contains,
@@ -89,9 +90,8 @@ pub struct Notification {
     window: HWND,
     /// Read and written by the window procedure, which reaches it through the window's user data.
     state: Box<State>,
-    /// Which reminder this is about, as an index into the store. Reminders are only ever added
-    /// to that list, never removed, so the index stays valid for the life of the notification.
-    pub reminder: usize,
+    /// Which reminder this is about.
+    pub reminder: Id,
     /// Which step up from the bottom corner the window sits at.
     pub slot: usize,
 }
@@ -135,7 +135,7 @@ struct Layout {
 }
 
 impl Notification {
-    pub fn show(text: &str, snoozes: u32, reminder: usize, slot: usize) -> io::Result<Self> {
+    pub fn show(text: &str, snoozes: u32, reminder: Id, slot: usize) -> io::Result<Self> {
         register_class()?;
 
         let (left, top, width, height) = placement(slot, 96);

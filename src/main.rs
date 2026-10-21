@@ -30,7 +30,7 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{
 };
 
 use crate::notify::{Notification, Outcome};
-use crate::reminder::{Reminder, State};
+use crate::reminder::{Id, Reminder, State};
 use crate::settings::Shortcut;
 use crate::store::Store;
 use crate::tray::Tray;
@@ -214,11 +214,8 @@ impl App {
         let next_due = store
             .reminders
             .iter()
-            .enumerate()
-            .filter(|(index, reminder)| {
-                reminder.state == State::Pending && !self.is_showing(*index)
-            })
-            .map(|(_, reminder)| reminder.due_unix)
+            .filter(|reminder| reminder.state == State::Pending && !self.is_showing(reminder.id))
+            .map(|reminder| reminder.due_unix)
             .min();
 
         match next_due {
@@ -235,20 +232,19 @@ impl App {
     fn deliver_due(&mut self) {
         let now = reminder::now_unix();
         // Read out what is needed and let go of the lock before opening any window.
-        let due: Vec<(usize, String, u32)> = {
+        let due: Vec<(Id, String, u32)> = {
             let store = self.reminders();
             store
                 .reminders
                 .iter()
-                .enumerate()
-                .filter(|(index, reminder)| reminder.is_due(now) && !self.is_showing(*index))
-                .map(|(index, reminder)| (index, reminder.text.clone(), reminder.snoozes))
+                .filter(|reminder| reminder.is_due(now) && !self.is_showing(reminder.id))
+                .map(|reminder| (reminder.id, reminder.text.clone(), reminder.snoozes))
                 .collect()
         };
 
-        for (index, text, snoozes) in due {
+        for (id, text, snoozes) in due {
             let slot = self.free_slot();
-            match Notification::show(&text, snoozes, index, slot) {
+            match Notification::show(&text, snoozes, id, slot) {
                 Ok(notification) => self.showing.push(notification),
                 // Without a window there is no way to tell the user, and re-trying every second
                 // would be worse than saying so once and leaving the reminder pending.
@@ -279,8 +275,10 @@ impl App {
             .store
             .lock()
             .expect("the reminders are no longer readable");
-        for (index, outcome) in answered {
-            let reminder = &mut store.reminders[index];
+        for (id, outcome) in answered {
+            let Some(reminder) = store.find(id) else {
+                continue;
+            };
             match outcome {
                 Outcome::Done => reminder.state = State::Done,
                 Outcome::Later(delay) => {
@@ -305,7 +303,7 @@ impl App {
             .expect("the reminders are no longer readable")
     }
 
-    fn is_showing(&self, reminder: usize) -> bool {
+    fn is_showing(&self, reminder: Id) -> bool {
         self.showing.iter().any(|shown| shown.reminder == reminder)
     }
 

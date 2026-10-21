@@ -17,7 +17,7 @@ use std::thread;
 use windows_sys::Win32::UI::WindowsAndMessaging::{PostThreadMessageW, WM_NULL};
 
 use crate::log;
-use crate::reminder::{self, State};
+use crate::reminder::{self, Id, State};
 use crate::store::Store;
 
 /// Asked for first, so the address stays the same between runs and can be bookmarked.
@@ -168,8 +168,8 @@ fn list(store: &Arc<Mutex<Store>>) -> String {
             json.push(',');
         }
         json.push_str(&format!(
-            "{{\"index\":{},\"due\":{},\"snoozes\":{},\"done\":{},\"text\":\"{}\"}}",
-            index,
+            "{{\"id\":\"{}\",\"due\":{},\"snoozes\":{},\"done\":{},\"text\":\"{}\"}}",
+            reminder.id,
             reminder.due_unix,
             reminder.snoozes,
             reminder.state == State::Done,
@@ -180,17 +180,17 @@ fn list(store: &Arc<Mutex<Store>>) -> String {
     json
 }
 
-/// `/reminders/3/done`, or `/reminders/3/snooze/30` for thirty minutes.
+/// `/reminders/<id>/done`, or `/reminders/<id>/snooze/30` for thirty minutes.
 fn act(target: &str, store: &Arc<Mutex<Store>>) -> Option<String> {
     let mut parts = target.trim_start_matches('/').split('/');
     if parts.next()? != "reminders" {
         return None;
     }
-    let index: usize = parts.next()?.parse().ok()?;
+    let id = Id::parse(parts.next()?)?;
     let action = parts.next()?;
 
     let mut store = store.lock().ok()?;
-    let reminder = store.reminders.get_mut(index)?;
+    let reminder = store.find(id)?;
 
     match action {
         "done" => reminder.state = State::Done,
@@ -253,15 +253,24 @@ mod tests {
         (Arc::new(Mutex::new(store)), path)
     }
 
+    /// Where the dashboard sends an action for the reminder at this position.
+    fn target(store: &Arc<Mutex<Store>>, position: usize, action: &str) -> String {
+        let id = store.lock().unwrap().reminders[position].id;
+        format!("/reminders/{id}/{action}")
+    }
+
     #[test]
-    fn lists_every_reminder_with_its_index() {
+    fn lists_every_reminder_with_its_id() {
         let (store, path) = store_with(&["water the plants", "call the dentist"]);
+        let ids: Vec<Id> = (0..2)
+            .map(|position| store.lock().unwrap().reminders[position].id)
+            .collect();
         let json = list(&store);
 
         assert!(json.starts_with('['));
-        assert!(json.contains("\"index\":0"));
+        assert!(json.contains(&format!("\"id\":\"{}\"", ids[0])));
         assert!(json.contains("\"text\":\"water the plants\""));
-        assert!(json.contains("\"index\":1"));
+        assert!(json.contains(&format!("\"id\":\"{}\"", ids[1])));
         assert!(json.contains("\"done\":false"));
         let _ = std::fs::remove_file(&path);
     }
@@ -278,7 +287,7 @@ mod tests {
     #[test]
     fn marking_done_changes_the_reminder() {
         let (store, path) = store_with(&["water the plants"]);
-        assert!(act("/reminders/0/done", &store).is_some());
+        assert!(act(&target(&store, 0, "done"), &store).is_some());
         assert!(store.lock().unwrap().reminders[0].state == State::Done);
         let _ = std::fs::remove_file(&path);
     }
@@ -286,7 +295,7 @@ mod tests {
     #[test]
     fn snoozing_moves_it_and_counts() {
         let (store, path) = store_with(&["water the plants"]);
-        assert!(act("/reminders/0/snooze/30", &store).is_some());
+        assert!(act(&target(&store, 0, "snooze/30"), &store).is_some());
 
         let store_guard = store.lock().unwrap();
         let reminder = &store_guard.reminders[0];
@@ -300,10 +309,31 @@ mod tests {
     #[test]
     fn refuses_anything_it_does_not_recognise() {
         let (store, path) = store_with(&["water the plants"]);
-        assert!(act("/reminders/0/explode", &store).is_none());
-        assert!(act("/reminders/9/done", &store).is_none());
+        assert!(act(&target(&store, 0, "explode"), &store).is_none());
+        assert!(act(&format!("/reminders/{}/done", Id::random()), &store).is_none());
+        assert!(act("/reminders/0/done", &store).is_none());
         assert!(act("/nonsense", &store).is_none());
-        assert!(act("/reminders/0/snooze", &store).is_none());
+        assert!(act(&target(&store, 0, "snooze"), &store).is_none());
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn an_action_reaches_the_same_reminder_after_others_are_added_before_it() {
+        let (store, path) = store_with(&["water the plants"]);
+        let wanted = target(&store, 0, "done");
+        store.lock().unwrap().reminders.insert(
+            0,
+            crate::reminder::Reminder::due_in(
+                std::time::Duration::from_secs(600),
+                "call the dentist".to_string(),
+            ),
+        );
+
+        assert!(act(&wanted, &store).is_some());
+        let store_guard = store.lock().unwrap();
+        assert!(store_guard.reminders[0].state == State::Pending);
+        assert!(store_guard.reminders[1].state == State::Done);
+        drop(store_guard);
         let _ = std::fs::remove_file(&path);
     }
 }

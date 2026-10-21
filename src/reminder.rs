@@ -1,9 +1,14 @@
 //! A reminder, and the Slack-style time expressions that schedule one.
 
+use std::fmt;
 use std::mem;
+use std::ptr;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use windows_sys::Win32::Foundation::SYSTEMTIME;
+use windows_sys::Win32::Security::Cryptography::{
+    BCRYPT_USE_SYSTEM_PREFERRED_RNG, BCryptGenRandom,
+};
 use windows_sys::Win32::System::SystemInformation::GetLocalTime;
 
 /// Where `tomorrow` lands when no clock time is given, matching Slack.
@@ -17,7 +22,48 @@ pub enum State {
     Done,
 }
 
+/// What a reminder is known by, for as long as it exists.
+///
+/// Random rather than counted, so that two devices adding reminders apart can never hand out
+/// the same one.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct Id(u128);
+
+impl Id {
+    pub fn random() -> Self {
+        let mut bytes = [0u8; 16];
+        // With the system's preferred generator and a valid buffer, this fails only for a
+        // programming error, never because of the machine it runs on.
+        let status = unsafe {
+            BCryptGenRandom(
+                ptr::null_mut(),
+                bytes.as_mut_ptr(),
+                bytes.len() as u32,
+                BCRYPT_USE_SYSTEM_PREFERRED_RNG,
+            )
+        };
+        assert!(status == 0, "BCryptGenRandom failed: {status:#x}");
+        Self(u128::from_le_bytes(bytes))
+    }
+
+    /// Reads the 32 hexadecimal digits the ID is written as.
+    pub fn parse(text: &str) -> Option<Self> {
+        // from_str_radix alone would also take a leading sign.
+        if text.len() != 32 || !text.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+            return None;
+        }
+        u128::from_str_radix(text, 16).ok().map(Self)
+    }
+}
+
+impl fmt::Display for Id {
+    fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+        write!(formatter, "{:032x}", self.0)
+    }
+}
+
 pub struct Reminder {
+    pub id: Id,
     /// Seconds since the Unix epoch. Stored as an instant rather than a delay so that a
     /// reminder written before a restart still comes due at the time the user asked for.
     pub due_unix: u64,
@@ -30,6 +76,7 @@ pub struct Reminder {
 impl Reminder {
     pub fn due_in(delay: Duration, text: String) -> Self {
         Self {
+            id: Id::random(),
             due_unix: now_unix() + delay.as_secs(),
             state: State::Pending,
             snoozes: 0,
@@ -455,5 +502,35 @@ mod tests {
         assert!(reminder.is_due(now_unix()));
         reminder.state = State::Done;
         assert!(!reminder.is_due(now_unix()));
+    }
+
+    #[test]
+    fn every_reminder_gets_an_id_of_its_own() {
+        let first = Reminder::due_in(Duration::from_secs(0), "tea".to_string());
+        let second = Reminder::due_in(Duration::from_secs(0), "tea".to_string());
+        assert_ne!(first.id, second.id);
+    }
+
+    #[test]
+    fn an_id_reads_back_the_way_it_was_written() {
+        let id = Id::random();
+        let written = id.to_string();
+        assert_eq!(written.len(), 32);
+        assert_eq!(Id::parse(&written), Some(id));
+    }
+
+    #[test]
+    fn an_id_keeps_its_leading_zeros() {
+        assert_eq!(Id(1).to_string(), format!("{}1", "0".repeat(31)));
+        assert_eq!(Id::parse(&Id(1).to_string()), Some(Id(1)));
+    }
+
+    #[test]
+    fn refuses_anything_that_is_not_an_id() {
+        assert_eq!(Id::parse(""), None);
+        assert_eq!(Id::parse("3"), None);
+        assert_eq!(Id::parse(&"g".repeat(32)), None);
+        assert_eq!(Id::parse(&"0".repeat(33)), None);
+        assert_eq!(Id::parse(&format!("+{}", "0".repeat(31))), None);
     }
 }

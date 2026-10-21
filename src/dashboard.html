@@ -163,13 +163,13 @@
     const actions = document.createElement("div");
     actions.className = "actions";
     if (reminder.done) {
-      actions.append(action("Put back", () => send(`/reminders/${reminder.index}/pending`)));
+      actions.append(action("Put back", () => send(`/reminders/${reminder.id}/pending`)));
     } else {
       for (const [label, minutes] of SNOOZES) {
         const howLong = minutes ?? minutesUntilTomorrowMorning();
-        actions.append(action(label, () => send(`/reminders/${reminder.index}/snooze/${howLong}`)));
+        actions.append(action(label, () => send(`/reminders/${reminder.id}/snooze/${howLong}`)));
       }
-      actions.append(action("Done", () => send(`/reminders/${reminder.index}/done`), true));
+      actions.append(action("Done", () => send(`/reminders/${reminder.id}/done`), true));
     }
 
     item.append(what, actions);

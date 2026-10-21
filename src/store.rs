@@ -1,16 +1,16 @@
 //! The reminder file, kept under the user's roaming profile.
 //!
-//! One reminder per line, `<due>\t<state>\t<snoozes>\t<text>`, with the text escaped so a multiline
-//! reminder still occupies a single line. The whole file is rewritten on every change, which is
-//! honest at this size and keeps one code path instead of two; the replacement goes through a
-//! temporary file so an interrupted write cannot leave a half-written store behind.
+//! One reminder per line, `<id>\t<due>\t<state>\t<snoozes>\t<text>`, with the text escaped so a
+//! multiline reminder still occupies a single line. The whole file is rewritten on every change,
+//! which is honest at this size and keeps one code path instead of two; the replacement goes
+//! through a temporary file so an interrupted write cannot leave a half-written store behind.
 
 use std::env;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 
-use crate::reminder::{Reminder, State};
+use crate::reminder::{Id, Reminder, State};
 
 pub struct Store {
     path: PathBuf,
@@ -39,6 +39,7 @@ impl Store {
 
         let mut reminders = Vec::new();
         let mut unreadable = Vec::new();
+        let mut handed_out_ids = false;
         // A byte order mark survives being opened and saved in Notepad, and would otherwise
         // make the first reminder unreadable.
         for (index, line) in contents.trim_start_matches('\u{feff}').lines().enumerate() {
@@ -46,7 +47,10 @@ impl Store {
                 continue;
             }
             match decode(line) {
-                Some(reminder) => reminders.push(reminder),
+                Some((reminder, given_an_id)) => {
+                    handed_out_ids |= given_an_id;
+                    reminders.push(reminder);
+                }
                 // Only this application writes the file, so an unreadable line means it was
                 // damaged. Say so rather than passing over it in silence.
                 None => {
@@ -60,11 +64,26 @@ impl Store {
             }
         }
 
-        Ok(Self {
+        let store = Self {
             path,
             reminders,
             unreadable,
-        })
+        };
+
+        // An ID handed to a line from an older version means nothing until it is written down:
+        // read again after a restart, the same line would be handed a different one. Failing to
+        // write it loses nothing, since the line is still there to be given one next time.
+        if handed_out_ids && let Err(error) = store.save() {
+            crate::log::problem(&format!(
+                "{}: could not write the new reminder IDs: {error}",
+                store.path.display()
+            ));
+        }
+        Ok(store)
+    }
+
+    pub fn find(&mut self, id: Id) -> Option<&mut Reminder> {
+        self.reminders.iter_mut().find(|reminder| reminder.id == id)
     }
 
     pub fn save(&self) -> io::Result<()> {
@@ -90,7 +109,9 @@ impl Store {
 }
 
 fn encode(reminder: &Reminder) -> String {
-    let mut line = reminder.due_unix.to_string();
+    let mut line = reminder.id.to_string();
+    line.push('\t');
+    line.push_str(&reminder.due_unix.to_string());
     line.push('\t');
     line.push_str(state_word(reminder.state));
     line.push('\t');
@@ -108,14 +129,25 @@ fn encode(reminder: &Reminder) -> String {
     line
 }
 
-fn decode(line: &str) -> Option<Reminder> {
+/// Reads one line, and says whether the reminder had to be given an ID because the version that
+/// wrote it did not have them yet.
+fn decode(line: &str) -> Option<(Reminder, bool)> {
     // A tab inside the text is escaped, so splitting on tabs cannot cut a reminder in half and
     // the number of columns says which version wrote the line.
     let columns: Vec<&str> = line.split('\t').collect();
-    let (due, state, snoozes, escaped) = match columns[..] {
-        [due, text] => (due, State::Pending, 0, text),
-        [due, state, text] => (due, parse_state(state)?, 0, text),
-        [due, state, snoozes, text] => (due, parse_state(state)?, snoozes.parse().ok()?, text),
+    let (id, due, state, snoozes, escaped) = match columns[..] {
+        [due, text] => (None, due, State::Pending, 0, text),
+        [due, state, text] => (None, due, parse_state(state)?, 0, text),
+        [due, state, snoozes, text] => {
+            (None, due, parse_state(state)?, snoozes.parse().ok()?, text)
+        }
+        [id, due, state, snoozes, text] => (
+            Some(Id::parse(id)?),
+            due,
+            parse_state(state)?,
+            snoozes.parse().ok()?,
+            text,
+        ),
         _ => return None,
     };
     let due_unix = due.parse().ok()?;
@@ -135,12 +167,14 @@ fn decode(line: &str) -> Option<Reminder> {
             _ => return None,
         }
     }
-    Some(Reminder {
+    let reminder = Reminder {
+        id: id.unwrap_or_else(Id::random),
         due_unix,
         state,
         snoozes,
         text,
-    })
+    };
+    Some((reminder, id.is_none()))
 }
 
 fn state_word(state: State) -> &'static str {
@@ -176,6 +210,7 @@ mod tests {
 
     fn reminder(due_unix: u64, state: State, text: &str) -> Reminder {
         Reminder {
+            id: Id::random(),
             due_unix,
             state,
             snoozes: 0,
@@ -280,6 +315,68 @@ mod tests {
         assert_eq!(store.reminders[0].snoozes, 0);
 
         fs::remove_file(&path).unwrap();
+    }
+
+    #[test]
+    fn keeps_each_reminder_its_id() {
+        let original = reminder(1, State::Pending, "tea");
+        let id = original.id;
+
+        let loaded = round_trip(vec![original]);
+        assert_eq!(loaded[0].id, id);
+    }
+
+    #[test]
+    fn a_file_written_before_ids_is_given_them_for_good() {
+        let path = temporary_path();
+        fs::write(&path, "1800000000\tpending\t2\tbuy milk\n1\tdone\t0\ttea\n").unwrap();
+
+        let first = Store::open(path.clone()).unwrap();
+        let ids: Vec<Id> = first.reminders.iter().map(|reminder| reminder.id).collect();
+        assert_ne!(ids[0], ids[1]);
+
+        // Read again, as after a restart: the same IDs, and nothing else about them changed.
+        let second = Store::open(path.clone()).unwrap();
+        assert_eq!(second.reminders.len(), 2);
+        assert_eq!(second.reminders[0].id, ids[0]);
+        assert_eq!(second.reminders[1].id, ids[1]);
+        assert_eq!(second.reminders[0].due_unix, 1_800_000_000);
+        assert_eq!(second.reminders[0].snoozes, 2);
+        assert_eq!(second.reminders[0].text, "buy milk");
+        assert!(second.reminders[1].state == State::Done);
+
+        let written = fs::read_to_string(&path).unwrap();
+        assert!(written.starts_with(&format!("{}\t1800000000\tpending\t2\tbuy milk\n", ids[0])));
+
+        fs::remove_file(&path).unwrap();
+    }
+
+    #[test]
+    fn a_line_whose_id_cannot_be_read_is_kept_rather_than_given_a_new_one() {
+        let path = temporary_path();
+        fs::write(&path, "not-an-id\t1800000000\tpending\t0\tbuy milk\n").unwrap();
+
+        let mut store = Store::open(path.clone()).unwrap();
+        assert!(store.reminders.is_empty());
+
+        store.reminders.push(reminder(1, State::Pending, "tea"));
+        store.save().unwrap();
+        let written = fs::read_to_string(&path).unwrap();
+        assert!(written.contains("not-an-id\t1800000000\tpending\t0\tbuy milk"));
+
+        fs::remove_file(&path).unwrap();
+    }
+
+    #[test]
+    fn finds_a_reminder_by_its_id() {
+        let path = temporary_path();
+        let mut store = Store::open(path).unwrap();
+        store.reminders.push(reminder(1, State::Pending, "first"));
+        store.reminders.push(reminder(2, State::Pending, "second"));
+        let wanted = store.reminders[1].id;
+
+        assert_eq!(store.find(wanted).unwrap().text, "second");
+        assert!(store.find(Id::random()).is_none());
     }
 
     #[test]
