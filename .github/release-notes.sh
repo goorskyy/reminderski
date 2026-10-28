@@ -48,10 +48,21 @@ for commit in $(git rev-list --no-merges "$range"); do
     fi
 done
 
+# Set by the workflow. Running this by hand, the remote knows the same thing.
+repository=${GITHUB_REPOSITORY:-$(git remote get-url origin |
+    sed -e 's#.*github\.com[:/]##' -e 's#\.git$##')}
+
+printf -- '---\n\n'
+
+# The first release has no earlier tag to compare itself against.
 if [ -n "$previous" ]; then
-    # Set by the workflow. Running this by hand, the remote knows the same thing.
-    repository=${GITHUB_REPOSITORY:-$(git remote get-url origin |
-        sed -e 's#.*github\.com[:/]##' -e 's#\.git$##')}
-    printf -- '---\n\nEvery change in full: https://github.com/%s/compare/%s...%s\n' \
+    printf 'Every change in full: https://github.com/%s/compare/%s...%s\n\n' \
         "$repository" "$previous" "$tag"
 fi
+
+# SignPath Foundation asks for the credit and the policy wherever a download is offered, and a
+# release page is one of those places. docs/code-signing.md says what is signed and by whom.
+printf 'Free code signing provided by [SignPath.io](https://signpath.io/), certificate by '
+printf '[SignPath Foundation](https://signpath.org/) — '
+printf '[Code signing policy](https://github.com/%s/blob/master/docs/code-signing.md)\n' \
+    "$repository"
