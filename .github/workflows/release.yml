@@ -40,6 +40,10 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      # GitHub signs the provenance on this workflow's behalf: the OIDC token is how it proves
+      # which workflow asked, and the attestations permission is where the signed result is kept.
+      id-token: write
+      attestations: write
     steps:
       # Before the artifacts, because checking out cleans the workspace it lands in. The whole
       # history and every tag, because the notes are the commits between this tag and the one
@@ -57,6 +61,14 @@ jobs:
       - name: Record the hashes
         shell: bash
         run: cd dist && sha256sum *.exe > checksums.txt && cat checksums.txt
+      # A hash only says that two files are identical; it cannot say where either came from. This
+      # signs a statement that these executables were built by this workflow, from this commit,
+      # which anybody can check for themselves without having to trust the download page:
+      #
+      #   gh attestation verify reminderski-x86_64-pc-windows-msvc.exe --repo goorskyy/reminderski
+      - uses: actions/attest-build-provenance@v4
+        with:
+          subject-path: dist/*.exe
       # Creating a release in the GitHub interface creates the tag too, so by the time this runs
       # the release usually exists already and only wants its executables attaching.
       - name: Publish the release

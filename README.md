@@ -31,6 +31,17 @@ Download the `.exe` from the [latest release](https://github.com/goorskyy/remind
 and run it. Nothing to install. The note appears in the notification area; right-click it to
 quit, open the dashboard, or start it with Windows.
 
+Windows will say the publisher is unknown, because the executable is not signed yet. Every
+release is built by GitHub Actions from the tagged commit, so you can check that you have that
+exact build instead of taking this page's word for it:
+
+```
+gh attestation verify reminderski-x86_64-pc-windows-msvc.exe --repo goorskyy/reminderski
+```
+
+Free code signing provided by [SignPath.io](https://signpath.io/), certificate by
+[SignPath Foundation](https://signpath.org/) — [Code signing policy](docs/code-signing.md).
+
 ## When
 
 `in 40m` · `1h30m` · `at 3pm` · `today at 18:00` · `tomorrow` · `friday at 9` · `next tuesday`
