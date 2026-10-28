@@ -1,4 +1,4 @@
-00# Features
+# Features
 
 Ideas and potential future features for Reminderski.
 
