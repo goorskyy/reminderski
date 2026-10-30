@@ -85,8 +85,6 @@ fn refuse_to_start(error: &io::Error) {
 }
 
 fn run() -> io::Result<()> {
-    capture::ignore_self_inflicted_ctrl_c();
-
     let path = store::default_path()?;
     log::write_to(path.with_file_name("reminderski.log"));
     let settings = settings::load(&path.with_file_name("settings.txt"));

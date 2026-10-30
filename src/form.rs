@@ -29,14 +29,15 @@ use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
     VK_CONTROL, VK_ESCAPE, VK_RETURN, VK_TAB,
 };
 use windows_sys::Win32::UI::WindowsAndMessaging::{
-    CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW, ES_AUTOHSCROLL,
+    CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW, EN_CHANGE, ES_AUTOHSCROLL,
     ES_AUTOVSCROLL, ES_MULTILINE, ES_WANTRETURN, GWLP_USERDATA, GetClientRect, GetCursorPos,
     GetDlgItem, GetMessageW, GetWindowLongPtrW, GetWindowTextLengthW, GetWindowTextW, HTCAPTION,
-    IDC_ARROW, LoadCursorW, MB_ICONERROR, MSG, MoveWindow, PostQuitMessage, RegisterClassW,
-    SW_SHOW, SWP_NOACTIVATE, SWP_NOZORDER, SendMessageW, SetForegroundWindow, SetWindowLongPtrW,
-    SetWindowPos, SetWindowTextW, ShowWindow, TranslateMessage, WM_CTLCOLOREDIT, WM_DESTROY,
-    WM_DPICHANGED, WM_GETFONT, WM_KEYDOWN, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE,
-    WM_NCLBUTTONDOWN, WM_PAINT, WM_SETFONT, WNDCLASSW, WS_CHILD, WS_POPUP, WS_VISIBLE,
+    IDC_ARROW, IsWindow, LoadCursorW, MB_ICONERROR, MSG, MoveWindow, PostQuitMessage,
+    RegisterClassW, SW_SHOW, SWP_NOACTIVATE, SWP_NOZORDER, SendMessageW, SetForegroundWindow,
+    SetWindowLongPtrW, SetWindowPos, SetWindowTextW, ShowWindow, TranslateMessage, WM_COMMAND,
+    WM_CTLCOLOREDIT, WM_DESTROY, WM_DPICHANGED, WM_GETFONT, WM_HOTKEY, WM_KEYDOWN, WM_LBUTTONDOWN,
+    WM_LBUTTONUP, WM_MOUSEMOVE, WM_NCLBUTTONDOWN, WM_PAINT, WM_SETFONT, WNDCLASSW, WS_CHILD,
+    WS_POPUP, WS_VISIBLE,
 };
 
 use crate::notify::WM_MOUSELEAVE;
@@ -46,6 +47,10 @@ use crate::ui::{
     LABEL_TRACKING, PAPER, TITLE_SIZE, TITLE_TRACKING, contains, draw_text, fill, inset, mono_font,
     outline, point_of, scale, wide,
 };
+
+/// Selects text in an edit control. It lives with the common controls rather than the window
+/// messages, which is the only reason it is written out here.
+const EM_SETSEL: u32 = 0x00b1;
 
 const CLASS_NAME: &str = "ReminderskiForm";
 const TITLE: &str = "REMINDERSKI";
@@ -107,6 +112,8 @@ struct State {
     /// Set by the window procedure when a button is clicked, read by the message loop, which is
     /// the half that can reach the fields.
     chosen: Cell<Option<usize>>,
+    /// Shown where the hint usually is, from a refused attempt until either field is changed.
+    problem: Cell<Option<Problem>>,
 }
 
 #[derive(Clone, Copy)]
@@ -134,7 +141,15 @@ struct Layout {
 enum Answer {
     Accepted(Entry),
     Cancelled,
-    Rejected,
+    Rejected(Problem),
+}
+
+/// Why the form would not take what was typed.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum Problem {
+    NoText,
+    NoTime,
+    UnreadableTime,
 }
 
 /// Shows the form pre-filled with `initial`, and blocks until the user accepts or cancels.
@@ -158,19 +173,49 @@ pub fn show(initial: &str) -> io::Result<Option<Entry>> {
         SetFocus(focus);
     }
 
-    Ok(run_modal_loop(&form))
+    Ok(run_modal_loop(&form, focus))
 }
 
 /// Pumps messages until the form closes, returning the entry if the user accepted.
 ///
 /// The keys are handled here rather than in the window procedure because the edit controls have
 /// the focus and consume them, and intercepting before dispatch avoids subclassing both.
-fn run_modal_loop(form: &Form) -> Option<Entry> {
+fn run_modal_loop(form: &Form, mut last_field: HWND) -> Option<Entry> {
     let mut entered = None;
     let mut message: MSG = unsafe { mem::zeroed() };
     loop {
-        if unsafe { GetMessageW(&mut message, ptr::null_mut(), 0, 0) } <= 0 {
+        let got = unsafe { GetMessageW(&mut message, ptr::null_mut(), 0, 0) };
+        // The form's own WM_DESTROY posts a quit to end this loop. One that arrives while the
+        // window is still open was posted for the whole application, by Quit on the tray menu,
+        // and is passed on to the application's loop rather than spent on closing the form.
+        if got == 0 && unsafe { IsWindow(form.window) } != 0 {
+            unsafe {
+                DestroyWindow(form.window);
+                PostQuitMessage(message.wParam as i32);
+            }
+            return None;
+        }
+        if got <= 0 {
             return entered;
+        }
+
+        // Remembered so that raising the form again can put the caret back where it was. While
+        // another application is in front, neither field has the focus.
+        if focused(form.text) {
+            last_field = form.text;
+        } else if focused(form.when) {
+            last_field = form.when;
+        }
+
+        // The capture shortcut pressed while the form is already open brings this form back to
+        // the front rather than opening a second one. The press itself is what grants the right
+        // to take the foreground from another application.
+        if message.message == WM_HOTKEY && message.wParam == crate::CAPTURE_HOTKEY as WPARAM {
+            unsafe {
+                SetForegroundWindow(form.window);
+                SetFocus(last_field);
+            }
+            continue;
         }
 
         // A button was clicked on the previous turn through the loop. When it did not close the
@@ -206,9 +251,8 @@ fn run_modal_loop(form: &Form) -> Option<Entry> {
             }
         }
 
-        // The capture hotkey stays registered while the form is open. WM_HOTKEY arrives here as
-        // a thread message with no target window, so dispatching it does nothing, which is what
-        // stops a second form from opening on top of this one.
+        // Any other hotkey arrives here as a thread message with no target window, so
+        // dispatching it does nothing until the form has closed.
         unsafe {
             TranslateMessage(&message);
             DispatchMessageW(&message);
@@ -234,8 +278,8 @@ impl Form {
                 unsafe { DestroyWindow(self.window) };
                 true
             }
-            Answer::Rejected => {
-                self.reject();
+            Answer::Rejected(problem) => {
+                self.reject(problem);
                 false
             }
         }
@@ -306,26 +350,55 @@ impl Form {
             return Answer::Cancelled;
         }
 
-        let text = read_text(self.text);
-        if text.trim().is_empty() {
-            return Answer::Rejected;
-        }
-
         let expression = match QUICK.get(button) {
             Some((_, expression)) => (*expression).to_string(),
             None => read_text(self.when),
         };
-        match reminder::parse_when(&expression) {
-            Some(delay) => Answer::Accepted(Entry { text, delay }),
-            None => Answer::Rejected,
+        match judge(read_text(self.text), &expression) {
+            Ok(entry) => Answer::Accepted(entry),
+            Err(problem) => Answer::Rejected(problem),
         }
     }
 
-    /// Says no without saying which half was wrong, which is the thing left to improve here.
-    fn reject(&self) {
+    /// Says what is wrong in place of the hint, and puts the caret in the field to fix. A time
+    /// that could not be read is selected, so typing replaces it.
+    fn reject(&self, problem: Problem) {
+        self.state.problem.set(Some(problem));
         unsafe {
+            InvalidateRect(self.window, ptr::null(), 0);
             MessageBeep(MB_ICONERROR);
-            SetFocus(self.when);
+            if problem == Problem::NoText {
+                SetFocus(self.text);
+            } else {
+                SetFocus(self.when);
+                SendMessageW(self.when, EM_SETSEL, 0, -1);
+            }
+        }
+    }
+}
+
+/// Whether what was typed makes a reminder, and if it does not, which half is wrong.
+fn judge(text: String, expression: &str) -> Result<Entry, Problem> {
+    if text.trim().is_empty() {
+        return Err(Problem::NoText);
+    }
+    if expression.trim().is_empty() {
+        return Err(Problem::NoTime);
+    }
+    match reminder::parse_when(expression) {
+        Some(delay) => Ok(Entry { text, delay }),
+        None => Err(Problem::UnreadableTime),
+    }
+}
+
+impl Problem {
+    fn explanation(self) -> &'static str {
+        match self {
+            Problem::NoText => "Nothing to remind you of yet. Write it in the box above.",
+            Problem::NoTime => "When? Pick a time above, or type one.",
+            Problem::UnreadableTime => {
+                "Can't read that time. Try \"in 45m\", \"at 12\" or \"friday 9\"."
+            }
         }
     }
 }
@@ -349,6 +422,7 @@ impl State {
             pressed: Cell::new(None),
             tracking: Cell::new(false),
             chosen: Cell::new(None),
+            problem: Cell::new(None),
         }
     }
 
@@ -639,6 +713,12 @@ unsafe extern "system" fn window_proc(
             paint(window, state, &layout);
             0
         }
+        // Typing into either field is taken as fixing what was refused, so the hint comes back.
+        WM_COMMAND if (wparam >> 16) as u32 == EN_CHANGE && state.problem.get().is_some() => {
+            state.problem.set(None);
+            unsafe { InvalidateRect(window, ptr::null(), 0) };
+            0
+        }
         // The edit controls paint themselves, and this is what stops them arriving grey.
         WM_CTLCOLOREDIT => {
             unsafe {
@@ -803,12 +883,16 @@ fn paint(window: HWND, state: &State, layout: &Layout) {
 
     outline(buffer, &layout.text_box, INK);
     outline(buffer, &layout.time_box, INK);
+    let (hint, hint_colour) = match state.problem.get() {
+        Some(problem) => (problem.explanation(), INK),
+        None => (HINT, LABEL),
+    };
     draw_text(
         buffer,
         &layout.hint,
-        &wide(HINT),
+        &wide(hint),
         fonts.hint,
-        LABEL,
+        hint_colour,
         0,
         dpi,
         DT_LEFT | DT_TOP | DT_SINGLELINE | DT_NOPREFIX,
@@ -881,4 +965,53 @@ fn read_text(edit: HWND) -> String {
     let mut buffer = vec![0u16; length as usize + 1];
     let copied = unsafe { GetWindowTextW(edit, buffer.as_mut_ptr(), buffer.len() as i32) };
     String::from_utf16_lossy(&buffer[..copied as usize])
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn takes_text_and_a_time_it_can_read() {
+        let entry = judge("water the plants".to_string(), "in 45m")
+            .ok()
+            .unwrap();
+        assert_eq!(entry.text, "water the plants");
+        assert_eq!(entry.delay, Duration::from_secs(45 * 60));
+    }
+
+    #[test]
+    fn says_when_there_is_nothing_to_remind_of() {
+        assert_eq!(judge(String::new(), "in 45m").err(), Some(Problem::NoText));
+        assert_eq!(
+            judge(" \r\n ".to_string(), "in 45m").err(),
+            Some(Problem::NoText)
+        );
+        // Both halves wrong: the text comes first, as it does on the form.
+        assert_eq!(
+            judge(String::new(), "whenever").err(),
+            Some(Problem::NoText)
+        );
+    }
+
+    #[test]
+    fn tells_a_missing_time_from_one_it_cannot_read() {
+        let text = || "water the plants".to_string();
+        assert_eq!(judge(text(), "").err(), Some(Problem::NoTime));
+        assert_eq!(judge(text(), "   ").err(), Some(Problem::NoTime));
+        assert_eq!(
+            judge(text(), "whenever").err(),
+            Some(Problem::UnreadableTime)
+        );
+    }
+
+    #[test]
+    fn every_explanation_is_different() {
+        let all = [Problem::NoText, Problem::NoTime, Problem::UnreadableTime];
+        for (index, problem) in all.iter().enumerate() {
+            for other in &all[index + 1..] {
+                assert_ne!(problem.explanation(), other.explanation());
+            }
+        }
+    }
 }
