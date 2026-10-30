@@ -35,11 +35,12 @@ const LONGEST_BODY: usize = 64 * 1024;
 pub fn start(store: Arc<Mutex<Store>>, wake: u32) -> io::Result<String> {
     let listener = bind()?;
     let address = format!("http://{}", listener.local_addr()?);
+    let port = listener.local_addr()?.port();
 
     thread::spawn(move || {
         for connection in listener.incoming() {
             match connection {
-                Ok(stream) => serve(stream, &store, wake),
+                Ok(stream) => serve(stream, &store, wake, port),
                 Err(error) => log::problem(&format!("dashboard connection failed: {error}")),
             }
         }
@@ -57,7 +58,7 @@ fn bind() -> io::Result<TcpListener> {
     }
 }
 
-fn serve(mut stream: TcpStream, store: &Arc<Mutex<Store>>, wake: u32) {
+fn serve(mut stream: TcpStream, store: &Arc<Mutex<Store>>, wake: u32, port: u16) {
     // Only one connection is served at a time, so one that goes quiet halfway through a request
     // would otherwise hold up the page for good.
     let _ = stream.set_read_timeout(Some(Duration::from_secs(5)));
@@ -70,7 +71,11 @@ fn serve(mut stream: TcpStream, store: &Arc<Mutex<Store>>, wake: u32) {
         return;
     };
 
-    let answer = route(method, target, &request.body, store, wake);
+    let answer = if trusted(&request, method, port) {
+        route(method, target, &request.body, store, wake)
+    } else {
+        Answer::forbidden()
+    };
     if let Err(error) = answer.write_to(&mut stream) {
         // A browser that navigated away mid-response is not worth reporting.
         if error.kind() != io::ErrorKind::BrokenPipe {
@@ -81,11 +86,37 @@ fn serve(mut stream: TcpStream, store: &Arc<Mutex<Store>>, wake: u32) {
 
 struct Request {
     line: String,
+    /// The name the browser used to reach this server, port included.
+    host: String,
+    /// Whether the request carries the header only this server's own page sends.
+    from_the_page: bool,
     body: String,
 }
 
-/// The first line and the body. The other headers are read and dropped, so that the browser is
-/// not left writing into a socket nobody is reading; only the body's length is wanted from them.
+/// Sent by the page with every change. The value means nothing; the header being there at all
+/// is what counts.
+const PAGE_HEADER: &str = "x-reminderski";
+
+/// Whether a request can be answered: whether it came from this server's own page, rather than
+/// from some other page open in the same browser.
+///
+/// Any page on any site can send requests to 127.0.0.1, and two things keep the ones from
+/// elsewhere from doing anything. The host must be this machine's own name, because a site can
+/// point its own name at 127.0.0.1, and the browser would then treat this server as part of that
+/// site and let it read the answers. And a change must carry PAGE_HEADER, because a page cannot
+/// add a header of its own to a request for another site without first asking that site's
+/// permission, which this server never gives. A page elsewhere can still ask for the list, but
+/// the browser will not let it read the answer.
+fn trusted(request: &Request, method: &str, port: u16) -> bool {
+    let here = [format!("127.0.0.1:{port}"), format!("localhost:{port}")];
+    let host_is_here = here
+        .iter()
+        .any(|name| request.host.eq_ignore_ascii_case(name));
+    host_is_here && (method == "GET" || request.from_the_page)
+}
+
+/// The first line, the body, and the two headers worth knowing. The rest are read and dropped,
+/// so that the browser is not left writing into a socket nobody is reading.
 fn read_request(stream: &TcpStream) -> Option<Request> {
     let mut reader = BufReader::new(stream);
     let mut line = String::new();
@@ -94,6 +125,8 @@ fn read_request(stream: &TcpStream) -> Option<Request> {
     }
 
     let mut length = 0;
+    let mut host = String::new();
+    let mut from_the_page = false;
     let mut header = String::new();
     loop {
         header.clear();
@@ -101,10 +134,15 @@ fn read_request(stream: &TcpStream) -> Option<Request> {
             Ok(0) => break,
             Ok(_) if header.trim().is_empty() => break,
             Ok(_) => {
-                if let Some((name, value)) = header.split_once(':')
-                    && name.trim().eq_ignore_ascii_case("content-length")
-                {
-                    length = value.trim().parse().ok()?;
+                let Some((name, value)) = header.split_once(':') else {
+                    continue;
+                };
+                let (name, value) = (name.trim().to_ascii_lowercase(), value.trim());
+                match name.as_str() {
+                    "content-length" => length = value.parse().ok()?,
+                    "host" => host = value.to_string(),
+                    PAGE_HEADER => from_the_page = true,
+                    _ => {}
                 }
             }
             Err(_) => break,
@@ -117,7 +155,12 @@ fn read_request(stream: &TcpStream) -> Option<Request> {
     let mut body = vec![0; length];
     reader.read_exact(&mut body).ok()?;
     let body = String::from_utf8(body).ok()?;
-    Some(Request { line, body })
+    Some(Request {
+        line,
+        host,
+        from_the_page,
+        body,
+    })
 }
 
 struct Answer {
@@ -140,6 +183,14 @@ impl Answer {
             status: "200 OK",
             kind: "application/json; charset=utf-8",
             body,
+        }
+    }
+
+    fn forbidden() -> Self {
+        Self {
+            status: "403 Forbidden",
+            kind: "text/plain; charset=utf-8",
+            body: "only the dashboard's own page may ask\n".to_string(),
         }
     }
 
@@ -372,6 +423,85 @@ mod tests {
         let request = request_from(raw.as_bytes()).unwrap();
         assert!(request.line.starts_with("POST /x "));
         assert_eq!(request.body, body);
+    }
+
+    #[test]
+    fn reads_who_a_request_was_for_and_whether_the_page_sent_it() {
+        let request =
+            request_from(b"POST /x HTTP/1.1\r\nHost: 127.0.0.1:7654\r\nX-Reminderski: 1\r\n\r\n")
+                .unwrap();
+        assert_eq!(request.host, "127.0.0.1:7654");
+        assert!(request.from_the_page);
+
+        let request = request_from(b"POST /x HTTP/1.1\r\nHost: 127.0.0.1:7654\r\n\r\n").unwrap();
+        assert!(!request.from_the_page);
+    }
+
+    fn asked(host: &str, from_the_page: bool) -> Request {
+        Request {
+            line: String::new(),
+            host: host.to_string(),
+            from_the_page,
+            body: String::new(),
+        }
+    }
+
+    #[test]
+    fn the_page_itself_may_read_and_change() {
+        assert!(trusted(&asked("127.0.0.1:7654", false), "GET", 7654));
+        assert!(trusted(&asked("127.0.0.1:7654", true), "POST", 7654));
+        assert!(trusted(&asked("LOCALHOST:7654", true), "POST", 7654));
+    }
+
+    #[test]
+    fn another_site_may_not_change_anything() {
+        // A plain form or fetch from another page cannot carry the header.
+        assert!(!trusted(&asked("127.0.0.1:7654", false), "POST", 7654));
+    }
+
+    #[test]
+    fn a_site_that_points_its_own_name_here_is_turned_away() {
+        assert!(!trusted(&asked("evil.example:7654", false), "GET", 7654));
+        assert!(!trusted(&asked("evil.example:7654", true), "POST", 7654));
+        assert!(!trusted(&asked("", false), "GET", 7654));
+    }
+
+    #[test]
+    fn the_port_has_to_be_the_one_it_is_listening_on() {
+        // It falls back to another port when 7654 is taken.
+        assert!(!trusted(&asked("127.0.0.1:7654", false), "GET", 50123));
+        assert!(trusted(&asked("127.0.0.1:50123", false), "GET", 50123));
+    }
+
+    /// The status line a running dashboard answers these bytes with.
+    fn status_of(address: &str, raw: &str) -> String {
+        let mut connection = TcpStream::connect(address.trim_start_matches("http://")).unwrap();
+        connection.write_all(raw.as_bytes()).unwrap();
+        let mut answer = String::new();
+        BufReader::new(connection).read_line(&mut answer).unwrap();
+        answer.trim().to_string()
+    }
+
+    #[test]
+    fn a_running_dashboard_only_takes_changes_from_its_own_page() {
+        let (store, path) = store_with(&["water the plants"]);
+        let id = store.lock().unwrap().reminders[0].id;
+        // A thread that does not exist: nudging the message loop simply goes nowhere.
+        let address = start(store.clone(), 0).unwrap();
+        let host = address.trim_start_matches("http://");
+        let done = format!("POST /reminders/{id}/done HTTP/1.1\r\nHost: {host}\r\n");
+
+        let from_elsewhere = status_of(&address, &format!("{done}\r\n"));
+        assert!(from_elsewhere.contains("403"), "{from_elsewhere}");
+        assert!(store.lock().unwrap().reminders[0].state == State::Pending);
+
+        let rebound = "GET /reminders HTTP/1.1\r\nHost: evil.example\r\n\r\n";
+        assert!(status_of(&address, rebound).contains("403"));
+
+        let from_the_page = status_of(&address, &format!("{done}X-Reminderski: 1\r\n\r\n"));
+        assert!(from_the_page.contains("200"), "{from_the_page}");
+        assert!(store.lock().unwrap().reminders[0].state == State::Done);
+        let _ = std::fs::remove_file(&path);
     }
 
     #[test]

@@ -146,8 +146,12 @@
     return Math.max(1, Math.round((morning - Date.now()) / 60000));
   }
 
+  // The server only takes a change that carries this header. Another site's page cannot add it
+  // without the server's permission, which it never gives.
+  const FROM_THE_PAGE = { "X-Reminderski": "1" };
+
   async function send(path) {
-    await fetch(path, { method: "POST" });
+    await fetch(path, { method: "POST", headers: FROM_THE_PAGE });
     await load();
   }
 
@@ -229,6 +233,7 @@
     const save = async () => {
       const answer = await fetch(`/reminders/${reminder.id}/edit`, {
         method: "POST",
+        headers: FROM_THE_PAGE,
         body: `${time.value}\n${text.value}`,
       });
       if (answer.ok) {

@@ -94,13 +94,18 @@ fn run() -> io::Result<()> {
     let store = Arc::new(Mutex::new(Store::open(path)?));
 
     // The dashboard wakes this thread after changing a reminder, since the loop may otherwise
-    // be asleep with nothing due for an hour.
-    let address = match dashboard::start(store.clone(), unsafe { GetCurrentThreadId() }) {
-        Ok(address) => Some(address),
-        Err(error) => {
-            // A dashboard that will not start is no reason to refuse to remind anybody.
-            log::problem(&format!("the dashboard could not start: {error}"));
-            None
+    // be asleep with nothing due for an hour. Turned off, nothing listens at all, which is the
+    // point of being able to turn it off.
+    let address = if !settings.dashboard {
+        None
+    } else {
+        match dashboard::start(store.clone(), unsafe { GetCurrentThreadId() }) {
+            Ok(address) => Some(address),
+            Err(error) => {
+                // A dashboard that will not start is no reason to refuse to remind anybody.
+                log::problem(&format!("the dashboard could not start: {error}"));
+                None
+            }
         }
     };
 

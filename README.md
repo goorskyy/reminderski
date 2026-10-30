@@ -53,5 +53,6 @@ Free code signing provided by [SignPath.io](https://signpath.io/), certificate b
 Reminders live in `%APPDATA%\Reminderski\reminders.txt`, one per line. The shortcuts are in
 `settings.txt` beside it, or on the tray menu under Settings.
 
-[Known problems](FINDINGS.md) · [Ideas](FEATURES.md) · [Building](docs/building.md) ·
+[What it does on your machine](docs/what-it-does.md) · [Known problems](FINDINGS.md) ·
+[Ideas](FEATURES.md) · [Building](docs/building.md) ·
 [House rules](AGENTS.md) · [MIT](LICENSE)

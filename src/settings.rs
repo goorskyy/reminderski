@@ -1,7 +1,8 @@
 //! The settings file, kept beside the reminders.
 //!
-//! One `name = value` per line, `#` starts a comment. Only the two shortcuts live here so far,
-//! which is why there is a parser for shortcuts and barely one for the file around them.
+//! One `name = value` per line, `#` starts a comment. The two shortcuts, and whether the
+//! dashboard is served, which is why there is a parser for shortcuts and barely one for the
+//! file around them.
 //!
 //! A setting that cannot be read falls back to what it was before anybody edited the file. A
 //! typed shortcut is the one thing here somebody will get wrong, and refusing to start over it
@@ -32,6 +33,11 @@ const DEFAULT_FILE: &str = "\
 
 capture = ctrl+alt+r
 answer = ctrl+alt+a
+
+# The dashboard is a page listing the reminders, served at http://127.0.0.1:7654 and only to
+# this machine. Turned off, Reminderski listens on no network port at all.
+
+dashboard = on
 ";
 
 /// A global shortcut, in the two pieces RegisterHotKey asks for.
@@ -44,6 +50,7 @@ pub struct Shortcut {
 pub struct Settings {
     pub capture: Shortcut,
     pub answer: Shortcut,
+    pub dashboard: bool,
 }
 
 impl Default for Settings {
@@ -61,6 +68,7 @@ impl Default for Settings {
                 modifiers: held,
                 key: b'A'.into(),
             },
+            dashboard: true,
         }
     }
 }
@@ -90,30 +98,35 @@ pub fn load(path: &Path) -> Settings {
         let Some((name, value)) = setting_on(line) else {
             continue;
         };
-        let target = match name {
-            "capture" => &mut settings.capture,
-            "answer" => &mut settings.answer,
-            _ => {
-                log::problem(&format!(
-                    "{}: line {}: no setting called {name}",
-                    path.display(),
-                    number + 1
-                ));
-                continue;
-            }
-        };
-        match parse_shortcut(value) {
-            Some(shortcut) => *target = shortcut,
-            // Named rather than counted, because the person who mistyped it is reading the log
-            // to find out why their shortcut does nothing.
-            None => log::problem(&format!(
-                "{}: line {}: {name} is not a shortcut this understands: {value}",
-                path.display(),
-                number + 1
-            )),
+        if let Err(why) = apply(&mut settings, name, value) {
+            log::problem(&format!("{}: line {}: {why}", path.display(), number + 1));
         }
     }
     settings
+}
+
+/// Sets one setting from its value as written in the file. What was wrong is said in words,
+/// because the person who mistyped it is reading the log to find out why nothing changed.
+fn apply(settings: &mut Settings, name: &str, value: &str) -> Result<(), String> {
+    let not_a_shortcut = || format!("{name} is not a shortcut this understands: {value}");
+    match name {
+        "capture" => settings.capture = parse_shortcut(value).ok_or_else(not_a_shortcut)?,
+        "answer" => settings.answer = parse_shortcut(value).ok_or_else(not_a_shortcut)?,
+        "dashboard" => {
+            settings.dashboard = parse_switch(value)
+                .ok_or_else(|| format!("dashboard is on or off, not {value}"))?;
+        }
+        _ => return Err(format!("no setting called {name}")),
+    }
+    Ok(())
+}
+
+fn parse_switch(text: &str) -> Option<bool> {
+    match text.to_ascii_lowercase().as_str() {
+        "on" | "yes" | "true" => Some(true),
+        "off" | "no" | "false" => Some(false),
+        _ => None,
+    }
 }
 
 fn write_default(path: &Path) -> io::Result<()> {
@@ -331,19 +344,43 @@ mod tests {
 
     #[test]
     fn the_file_written_on_a_first_run_says_what_the_defaults_are() {
-        let mut settings = Settings::default();
+        // Started the other way from the defaults, so a line the file lacks shows up.
+        let mut settings = Settings {
+            dashboard: false,
+            ..Settings::default()
+        };
         for line in DEFAULT_FILE.lines() {
-            if let Some((name, value)) = setting_on(line)
-                && let Some(parsed) = parse_shortcut(value)
-            {
-                match name {
-                    "capture" => settings.capture = parsed,
-                    "answer" => settings.answer = parsed,
-                    _ => panic!("the default file sets {name}, which load does not read"),
-                }
+            if let Some((name, value)) = setting_on(line) {
+                apply(&mut settings, name, value).expect("the default file should read");
             }
         }
         assert_eq!(settings.capture, Settings::default().capture);
         assert_eq!(settings.answer, Settings::default().answer);
+        assert!(settings.dashboard);
+    }
+
+    #[test]
+    fn the_dashboard_can_be_turned_off() {
+        let path = temporary_path();
+        fs::write(&path, "dashboard = Off\n").expect("could not write");
+
+        let settings = load(&path);
+        assert!(!settings.dashboard);
+        assert_eq!(settings.capture, Settings::default().capture);
+        let _ = fs::remove_file(&path);
+    }
+
+    #[test]
+    fn a_switch_it_cannot_read_leaves_the_dashboard_on() {
+        let mut settings = Settings::default();
+        assert!(apply(&mut settings, "dashboard", "maybe").is_err());
+        assert!(settings.dashboard);
+    }
+
+    #[test]
+    fn a_setting_it_does_not_know_is_said_rather_than_passed_over() {
+        let mut settings = Settings::default();
+        let why = apply(&mut settings, "dashbaord", "off").unwrap_err();
+        assert!(why.contains("dashbaord"), "{why}");
     }
 }
