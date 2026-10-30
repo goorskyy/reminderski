@@ -17,9 +17,9 @@ use windows_sys::Win32::Foundation::{HWND, LPARAM, LRESULT, POINT, RECT, WPARAM}
 use windows_sys::Win32::Graphics::Gdi::{
     BeginPaint, BitBlt, CreateCompatibleBitmap, CreateCompatibleDC, CreateSolidBrush, DT_CENTER,
     DT_LEFT, DT_NOPREFIX, DT_SINGLELINE, DT_TOP, DT_VCENTER, DeleteDC, DeleteObject, EndPaint,
-    GetMonitorInfoW, HBRUSH, HFONT, InvalidateRect, MONITOR_DEFAULTTONEAREST, MONITORINFO,
-    MonitorFromPoint, PAINTSTRUCT, SRCCOPY, SelectObject, SetBkColor, SetBkMode, SetTextColor,
-    TRANSPARENT,
+    GetDC, GetMonitorInfoW, GetTextMetricsW, HBRUSH, HFONT, InvalidateRect,
+    MONITOR_DEFAULTTONEAREST, MONITORINFO, MonitorFromPoint, PAINTSTRUCT, ReleaseDC, SRCCOPY,
+    SelectObject, SetBkColor, SetBkMode, SetTextColor, TEXTMETRICW, TRANSPARENT,
 };
 use windows_sys::Win32::System::Diagnostics::Debug::MessageBeep;
 use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
@@ -35,8 +35,8 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{
     IDC_ARROW, LoadCursorW, MB_ICONERROR, MSG, MoveWindow, PostQuitMessage, RegisterClassW,
     SW_SHOW, SWP_NOACTIVATE, SWP_NOZORDER, SendMessageW, SetForegroundWindow, SetWindowLongPtrW,
     SetWindowPos, SetWindowTextW, ShowWindow, TranslateMessage, WM_CTLCOLOREDIT, WM_DESTROY,
-    WM_DPICHANGED, WM_KEYDOWN, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE, WM_NCLBUTTONDOWN,
-    WM_PAINT, WM_SETFONT, WNDCLASSW, WS_CHILD, WS_POPUP, WS_VISIBLE,
+    WM_DPICHANGED, WM_GETFONT, WM_KEYDOWN, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE,
+    WM_NCLBUTTONDOWN, WM_PAINT, WM_SETFONT, WNDCLASSW, WS_CHILD, WS_POPUP, WS_VISIBLE,
 };
 
 use crate::notify::WM_MOUSELEAVE;
@@ -501,33 +501,45 @@ impl Layout {
 
 /// Puts the edit controls inside the boxes drawn for them.
 ///
-/// The multiline box fills its frame and its text starts at the top. A single line control
-/// draws its text at the top too, so the time field is made one line tall and that line is
-/// centred in the box instead.
+/// An edit control draws its first line at its very top and leaves whatever is left over at
+/// the bottom, so a control simply inset into its box puts the text, and the caret, high in it.
+/// Each control is made a whole number of lines tall instead, measured from its font, and that
+/// block of lines is centred in the box: one line for the time, as many as fit for the text.
 fn place_fields(window: HWND, dpi: u32) {
     let layout = Layout::of(window, dpi);
     let inset_by = scale(EDIT_INSET, dpi);
 
-    let text_area = inset(&layout.text_box, inset_by, inset_by / 2);
-    let line = scale(FIELD_SIZE, dpi) * 3 / 2;
-    let box_height = layout.time_box.bottom - layout.time_box.top;
-    let time_area = RECT {
-        top: layout.time_box.top + (box_height - line) / 2,
-        bottom: layout.time_box.top + (box_height - line) / 2 + line,
-        ..inset(&layout.time_box, inset_by, 0)
-    };
-
-    for (id, area) in [(ID_TEXT, text_area), (ID_WHEN, time_area)] {
+    for (id, frame) in [(ID_TEXT, layout.text_box), (ID_WHEN, layout.time_box)] {
+        let field = unsafe { GetDlgItem(window, id) };
+        let line = line_height(field);
+        let room = (frame.bottom - frame.top) - inset_by;
+        let lines = (room / line).max(1);
+        let top = frame.top + ((frame.bottom - frame.top) - lines * line) / 2;
         unsafe {
             MoveWindow(
-                GetDlgItem(window, id),
-                area.left,
-                area.top,
-                area.right - area.left,
-                area.bottom - area.top,
+                field,
+                frame.left + inset_by,
+                top,
+                (frame.right - frame.left) - 2 * inset_by,
+                lines * line,
                 1,
             )
         };
+    }
+}
+
+/// How tall one line of text is in an edit control, in the font it has been given. It is the
+/// font's full cell, which is also the height of the caret.
+fn line_height(field: HWND) -> i32 {
+    unsafe {
+        let font = SendMessageW(field, WM_GETFONT, 0, 0) as HFONT;
+        let device = GetDC(field);
+        let previous = SelectObject(device, font as _);
+        let mut metrics: TEXTMETRICW = mem::zeroed();
+        GetTextMetricsW(device, &mut metrics);
+        SelectObject(device, previous);
+        ReleaseDC(field, device);
+        metrics.tmHeight
     }
 }
 

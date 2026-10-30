@@ -48,7 +48,45 @@ use crate::ui::{
 };
 
 const CLASS_NAME: &str = "ReminderskiNotification";
-const TITLE: &str = "REMINDERSKI !!";
+const TITLE: &str = "REMINDERSKI";
+
+/// The line above the reminder, one picked at random each time a notification opens. The first
+/// list is for a reminder's first appearance, the second for its comebacks, which are followed
+/// by how many there have been and so have less room. The tests hold both to one line.
+const FIRST_WORDS: [&str; 18] = [
+    "EXCUSE ME... BUT:",
+    "SORRY TO BOTHER YOU:",
+    "PSST:",
+    "QUICK THING:",
+    "AHEM:",
+    "YOU ASKED ME TO SAY:",
+    "AS PROMISED:",
+    "JUST A NUDGE:",
+    "ONE SMALL THING:",
+    "NOT TO NAG, BUT:",
+    "KNOCK KNOCK:",
+    "HATE TO INTERRUPT, BUT:",
+    "HEADS UP:",
+    "BEFORE YOU FORGET:",
+    "DON'T SHOOT THE MESSENGER:",
+    "YOU TOLD ME TO TELL YOU:",
+    "IF I MAY:",
+    "PARDON THE INTRUSION:",
+];
+const COMEBACK_WORDS: [&str; 12] = [
+    "ME AGAIN:",
+    "STILL HERE:",
+    "AS I WAS SAYING:",
+    "REMEMBER ME?",
+    "BACK AGAIN:",
+    "ONE MORE TIME:",
+    "I'M NOT GOING AWAY:",
+    "SO, ABOUT THIS:",
+    "EXCUSE ME... AGAIN:",
+    "STILL WAITING:",
+    "NOT THAT I MIND:",
+    "FRIENDLY FOLLOW-UP:",
+];
 
 /// Logical pixels at 96 DPI.
 const WIDTH: i32 = 520;
@@ -220,17 +258,20 @@ impl Drop for Notification {
     }
 }
 
+/// The line above the reminder. `pick` chooses the words, so a test can ask for each in turn.
+fn eyebrow(snoozes: u32, pick: u128) -> String {
+    if snoozes == 0 {
+        return FIRST_WORDS[(pick % FIRST_WORDS.len() as u128) as usize].to_string();
+    }
+    let words = COMEBACK_WORDS[(pick % COMEBACK_WORDS.len() as u128) as usize];
+    format!("{words} (snoozed {snoozes}x)")
+}
+
 impl State {
     fn new(text: &str, snoozes: u32, dpi: u32) -> Self {
-        let eyebrow = if snoozes == 0 {
-            "EXCUSE ME... BUT:".to_string()
-        } else {
-            format!("EXCUSE ME... BUT: (snoozed {snoozes}x)")
-        };
-
         Self {
             text: wide(text),
-            eyebrow: wide(&eyebrow),
+            eyebrow: wide(&eyebrow(snoozes, crate::reminder::random())),
             snoozes,
             opened: Instant::now(),
             // Ignoring the window is the same as pressing the first snooze.
@@ -736,5 +777,41 @@ fn paint(window: HWND, state: &State, layout: &Layout) {
         DeleteObject(bitmap as _);
         DeleteDC(buffer);
         EndPaint(window, &info);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_first_appearance_says_nothing_about_snoozing() {
+        for pick in 0..FIRST_WORDS.len() as u128 {
+            let words = eyebrow(0, pick);
+            assert!(FIRST_WORDS.contains(&words.as_str()));
+        }
+    }
+
+    #[test]
+    fn a_comeback_says_how_many_times() {
+        for pick in 0..COMEBACK_WORDS.len() as u128 {
+            let words = eyebrow(3, pick);
+            assert!(words.ends_with(" (snoozed 3x)"), "{words}");
+            assert!(COMEBACK_WORDS.iter().any(|said| words.starts_with(said)));
+        }
+    }
+
+    #[test]
+    fn every_line_fits_on_the_window() {
+        // Thirty-six characters were measured to fit at 100%. Three fewer leaves room for the
+        // rounding at other scales, and in a monospace font characters are all it takes.
+        const ROOM: usize = 33;
+        for words in FIRST_WORDS {
+            assert!(words.len() <= ROOM, "{words}");
+        }
+        for words in COMEBACK_WORDS {
+            let line = format!("{words} (snoozed 99x)");
+            assert!(line.len() <= ROOM, "{line}");
+        }
     }
 }

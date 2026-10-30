@@ -34,19 +34,7 @@ pub struct Id(u128);
 
 impl Id {
     pub fn random() -> Self {
-        let mut bytes = [0u8; 16];
-        // With the system's preferred generator and a valid buffer, this fails only for a
-        // programming error, never because of the machine it runs on.
-        let status = unsafe {
-            BCryptGenRandom(
-                ptr::null_mut(),
-                bytes.as_mut_ptr(),
-                bytes.len() as u32,
-                BCRYPT_USE_SYSTEM_PREFERRED_RNG,
-            )
-        };
-        assert!(status == 0, "BCryptGenRandom failed: {status:#x}");
-        Self(u128::from_le_bytes(bytes))
+        Self(random())
     }
 
     /// Reads the 32 hexadecimal digits the ID is written as.
@@ -63,6 +51,23 @@ impl fmt::Display for Id {
     fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
         write!(formatter, "{:032x}", self.0)
     }
+}
+
+/// 128 bits from the system's random number generator.
+pub fn random() -> u128 {
+    let mut bytes = [0u8; 16];
+    // With the system's preferred generator and a valid buffer, this fails only for a
+    // programming error, never because of the machine it runs on.
+    let status = unsafe {
+        BCryptGenRandom(
+            ptr::null_mut(),
+            bytes.as_mut_ptr(),
+            bytes.len() as u32,
+            BCRYPT_USE_SYSTEM_PREFERRED_RNG,
+        )
+    };
+    assert!(status == 0, "BCryptGenRandom failed: {status:#x}");
+    u128::from_le_bytes(bytes)
 }
 
 pub struct Reminder {
