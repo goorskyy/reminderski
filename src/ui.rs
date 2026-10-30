@@ -17,8 +17,9 @@ const MONOSPACE_FACE: &str = "Consolas";
 /// their sizes from here so that the same kind of thing is never set two ways.
 pub const TITLE_SIZE: i32 = 13;
 pub const LABEL_SIZE: i32 = 13;
-/// The examples under the time field, which sit below the labels.
-pub const HINT_SIZE: i32 = 11;
+/// The examples under the time field. Set any smaller than the labels, they were too small to
+/// read without leaning in.
+pub const HINT_SIZE: i32 = 13;
 pub const BUTTON_SIZE: i32 = 14;
 /// What you type, and what the reminder says when it comes back.
 pub const FIELD_SIZE: i32 = 15;
@@ -40,8 +41,10 @@ pub fn wide(text: &str) -> Vec<u16> {
 /// Every logical pixel in both windows goes through `scale` — the window itself, the padding,
 /// the fonts and the letter spacing alike — so the design is retuned here rather than in forty
 /// constants that would then have to agree with each other. It was drawn noticeably larger than
-/// the original Reminderski, which is what this brings back.
-const DESIGN_PERCENT: i32 = 80;
+/// the original Reminderski and first brought down to 80%, which at 100% display scaling left the
+/// hints 9 pixels tall and the labels 10, small enough that Consolas went soft. 90% is the
+/// compromise between the two.
+const DESIGN_PERCENT: i32 = 90;
 
 /// A logical pixel in the design, as an actual pixel on this monitor.
 ///
@@ -79,7 +82,9 @@ pub fn mono_font(dpi: u32, height: i32, bold: bool) -> HFONT {
 /// The palette, read off the photographs of the original.
 pub const INK: COLORREF = rgb(0x0d, 0x0d, 0x0b);
 pub const PAPER: COLORREF = rgb(0xff, 0xff, 0xff);
-pub const LABEL: COLORREF = rgb(0x8b, 0x89, 0x7f);
+/// Darker than the photographs, whose #8b897f is 3.5:1 against the paper. At the size labels are
+/// set, that read as fog; this is 5.5:1, still plainly grey beside the ink.
+pub const LABEL: COLORREF = rgb(0x6b, 0x69, 0x60);
 pub const BAR: COLORREF = rgb(0x0a, 0x0a, 0x08);
 pub const BAR_INK: COLORREF = rgb(0xf2, 0xf1, 0xea);
 /// A hovered outline button, and a hovered filled one.
@@ -243,20 +248,21 @@ mod tests {
     #[test]
     fn the_design_is_drawn_at_its_percentage() {
         assert_eq!(scale(100, NORMAL_DPI), DESIGN_PERCENT);
-        assert_eq!(scale(520, NORMAL_DPI), 416);
+        assert_eq!(scale(520, NORMAL_DPI), 468);
     }
 
     #[test]
     fn a_denser_monitor_gets_proportionally_more_pixels() {
         assert_eq!(scale(100, 2 * NORMAL_DPI), 2 * DESIGN_PERCENT);
-        assert_eq!(scale(100, 144), 120);
+        assert_eq!(scale(100, 144), 135);
     }
 
-    /// The values here are single digits, where truncating loses far more than it rounds off.
+    /// The values here are single digits, where truncating loses far more than it rounds off:
+    /// 1.8 and 2.7 pixels would come out as 1 and 2.
     #[test]
     fn the_smallest_sizes_survive_being_scaled() {
         assert_eq!(scale(LABEL_TRACKING, NORMAL_DPI), 2);
-        assert_eq!(scale(TITLE_TRACKING, NORMAL_DPI), 2);
+        assert_eq!(scale(TITLE_TRACKING, NORMAL_DPI), 3);
         assert!(scale(1, NORMAL_DPI) > 0, "a hairline may not round away");
     }
 }

@@ -80,12 +80,12 @@ const COMEBACK_WORDS: [&str; 12] = [
     "REMEMBER ME?",
     "BACK AGAIN:",
     "ONE MORE TIME:",
-    "I'M NOT GOING AWAY:",
+    "NOT GOING AWAY:",
     "SO, ABOUT THIS:",
-    "EXCUSE ME... AGAIN:",
+    "PARDON, AGAIN:",
     "STILL WAITING:",
     "NOT THAT I MIND:",
-    "FRIENDLY FOLLOW-UP:",
+    "FOLLOWING UP:",
 ];
 
 /// Logical pixels at 96 DPI.
@@ -803,9 +803,10 @@ mod tests {
 
     #[test]
     fn every_line_fits_on_the_window() {
-        // Thirty-six characters were measured to fit at 100%. Three fewer leaves room for the
-        // rounding at other scales, and in a monospace font characters are all it takes.
-        const ROOM: usize = 33;
+        // Thirty-one characters were measured to fit at 100% display scaling. One fewer leaves
+        // room for the rounding at other scales, and in a monospace font characters are all it
+        // takes.
+        const ROOM: usize = 30;
         for words in FIRST_WORDS {
             assert!(words.len() <= ROOM, "{words}");
         }

@@ -7,7 +7,8 @@ moment, fix them together.
 ## The notification
 
 - It reads fine on one screen and looked oversized on another, and only the second half of that
-  was dealt with: the whole design came down to 80% (`DESIGN_PERCENT` in `src/ui.rs`). Whether
+  was dealt with: the whole design came down to 80% (`DESIGN_PERCENT` in `src/ui.rs`), since
+  raised to 90% because at 80% the small text went foggy on a 100% screen. Whether
   the difference between the two screens was ever really about their DPI was never answered, so
   it may yet turn out that one number for every monitor is the wrong shape of fix.
 - Several notifications stack upwards, but the rest do not move down when one is answered.
