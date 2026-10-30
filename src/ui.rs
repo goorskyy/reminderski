@@ -5,9 +5,9 @@ use std::mem;
 
 use windows_sys::Win32::Foundation::{COLORREF, LPARAM, POINT, RECT};
 use windows_sys::Win32::Graphics::Gdi::{
-    CreateFontIndirectW, CreateSolidBrush, DT_CALCRECT, DT_CENTER, DT_NOPREFIX, DT_SINGLELINE,
-    DeleteObject, DrawTextW, FillRect, FrameRect, HBRUSH, HDC, HFONT, LOGFONTW, SelectObject,
-    SetTextCharacterExtra, SetTextColor,
+    CreateFontIndirectW, CreateSolidBrush, DT_CALCRECT, DT_CENTER, DT_NOPREFIX, DT_RIGHT,
+    DT_SINGLELINE, DeleteObject, DrawTextW, FillRect, FrameRect, HBRUSH, HDC, HFONT, LOGFONTW,
+    SelectObject, SetTextCharacterExtra, SetTextColor,
 };
 
 /// Everything is set in one fixed-pitch face, which is also the only kind the persona lines up in.
@@ -137,14 +137,19 @@ pub fn draw_text(
 
     let mut area = *rect;
     let mut flags = flags;
-    if tracking != 0 && flags & DT_CENTER != 0 {
+    if tracking != 0 && flags & (DT_CENTER | DT_RIGHT) != 0 {
         // GDI centres a run by a width it measures without counting the character spacing it
         // then draws with, so the text lands right of centre by half of everything the spacing
-        // adds — which grows with the length of the label. Measuring the run and placing it by
-        // hand is the only way to get it actually centred.
-        area.left =
-            rect.left + ((rect.right - rect.left) - spaced_width(hdc, content, dpi, tracking)) / 2;
-        flags &= !DT_CENTER;
+        // adds — which grows with the length of the label — and right-aligned text runs past
+        // its edge by all of it. Measuring the run and placing it by hand is the only way to
+        // get either where it was asked for.
+        let width = spaced_width(hdc, content, dpi, tracking);
+        area.left = if flags & DT_CENTER != 0 {
+            rect.left + ((rect.right - rect.left) - width) / 2
+        } else {
+            rect.right - width
+        };
+        flags &= !(DT_CENTER | DT_RIGHT);
     }
     unsafe { DrawTextW(hdc, content.as_ptr(), -1, &mut area, flags) };
 

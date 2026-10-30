@@ -19,24 +19,25 @@ use std::time::{Duration, Instant};
 
 use windows_sys::Win32::Foundation::{HWND, LPARAM, LRESULT, POINT, RECT, WPARAM};
 use windows_sys::Win32::Graphics::Gdi::{
-    BeginPaint, BitBlt, CreateCompatibleBitmap, CreateCompatibleDC, DT_CENTER, DT_LEFT,
-    DT_NOPREFIX, DT_SINGLELINE, DT_TOP, DT_VCENTER, DT_WORDBREAK, DeleteDC, DeleteObject, EndPaint,
-    GetMonitorInfoW, HFONT, InvalidateRect, MONITOR_DEFAULTTONEAREST, MONITORINFO,
-    MonitorFromPoint, PAINTSTRUCT, SRCCOPY, SelectObject, SetBkMode, TRANSPARENT,
+    BeginPaint, BitBlt, CreateCompatibleBitmap, CreateCompatibleDC, DT_CALCRECT, DT_CENTER,
+    DT_LEFT, DT_NOPREFIX, DT_RIGHT, DT_SINGLELINE, DT_TOP, DT_VCENTER, DT_WORDBREAK, DeleteDC,
+    DeleteObject, DrawTextW, EndPaint, GetMonitorInfoW, GetTextMetricsW, HDC, HFONT,
+    IntersectClipRect, InvalidateRect, MONITOR_DEFAULTTONEAREST, MONITORINFO, MonitorFromPoint,
+    PAINTSTRUCT, SRCCOPY, SelectClipRgn, SelectObject, SetBkMode, TEXTMETRICW, TRANSPARENT,
 };
 use windows_sys::Win32::System::Diagnostics::Debug::MessageBeep;
 use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows_sys::Win32::UI::HiDpi::GetDpiForWindow;
 use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
-    ReleaseCapture, TRACKMOUSEEVENT, TrackMouseEvent, VK_ESCAPE, VK_RETURN,
+    ReleaseCapture, TRACKMOUSEEVENT, TrackMouseEvent, VK_DOWN, VK_ESCAPE, VK_RETURN, VK_UP,
 };
 use windows_sys::Win32::UI::WindowsAndMessaging::{
     CreateWindowExW, DefWindowProcW, DestroyWindow, GWLP_USERDATA, GetClientRect, GetCursorPos,
-    GetWindowLongPtrW, HTCAPTION, IDC_ARROW, IsWindow, KillTimer, LoadCursorW, MB_ICONASTERISK,
-    RegisterClassW, SW_SHOWNOACTIVATE, SWP_NOACTIVATE, SWP_NOZORDER, SetTimer, SetWindowLongPtrW,
-    SetWindowPos, ShowWindow, WM_CLOSE, WM_DPICHANGED, WM_KEYDOWN, WM_LBUTTONDOWN, WM_LBUTTONUP,
-    WM_MOUSEMOVE, WM_NCLBUTTONDOWN, WM_PAINT, WM_TIMER, WNDCLASSW, WS_EX_TOOLWINDOW, WS_EX_TOPMOST,
-    WS_POPUP,
+    GetWindowLongPtrW, GetWindowRect, HTCAPTION, IDC_ARROW, IsWindow, KillTimer, LoadCursorW,
+    MB_ICONASTERISK, RegisterClassW, SW_SHOWNOACTIVATE, SWP_NOACTIVATE, SWP_NOSIZE, SWP_NOZORDER,
+    SetTimer, SetWindowLongPtrW, SetWindowPos, ShowWindow, WM_ACTIVATE, WM_CLOSE, WM_DPICHANGED,
+    WM_KEYDOWN, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_NCLBUTTONDOWN,
+    WM_PAINT, WM_TIMER, WNDCLASSW, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_POPUP,
 };
 
 use crate::persona::{self, Mood};
@@ -97,6 +98,10 @@ const GAP: i32 = 10;
 const FACE: i32 = 152;
 const BUTTON_HEIGHT: i32 = 44;
 const DONE_WIDTH: i32 = 118;
+/// Between the windows of a stack, and between the stack and the corner of the screen.
+const STACK_GAP: i32 = 12;
+/// The scroll bar beside a reminder too long for the window.
+const SCROLL_BAR_WIDTH: i32 = 3;
 
 const ANIMATION_TIMER: usize = 1;
 
@@ -151,6 +156,15 @@ struct State {
     tracking: Cell<bool>,
     dpi: Cell<u32>,
     fonts: Cell<Fonts>,
+    answer_shortcut: Option<String>,
+    /// Whether the window is in the foreground, which is the only time its keys work.
+    active: Cell<bool>,
+    /// How far the reminder has been scrolled up, in pixels.
+    scroll: Cell<i32>,
+    /// How far it can be, and how tall a line of it is. Both are only known once it has been
+    /// measured in its font, so they are written down by the paint that measures it.
+    overflow: Cell<i32>,
+    line: Cell<i32>,
 }
 
 #[derive(Clone, Copy)]
@@ -173,7 +187,15 @@ struct Layout {
 }
 
 impl Notification {
-    pub fn show(text: &str, snoozes: u32, reminder: Id, slot: usize) -> io::Result<Self> {
+    /// `answer_shortcut` is the combination that reaches it, as the settings write it, and None
+    /// when there is none to name.
+    pub fn show(
+        text: &str,
+        snoozes: u32,
+        reminder: Id,
+        slot: usize,
+        answer_shortcut: Option<&str>,
+    ) -> io::Result<Self> {
         register_class()?;
 
         let (left, top, width, height) = placement(slot, 96);
@@ -213,7 +235,7 @@ impl Notification {
             )
         };
 
-        let state = Box::new(State::new(text, snoozes, dpi));
+        let state = Box::new(State::new(text, snoozes, dpi, answer_shortcut));
         unsafe { SetWindowLongPtrW(window, GWLP_USERDATA, ptr::from_ref(&*state) as isize) };
 
         let notification = Self {
@@ -240,6 +262,32 @@ impl Notification {
         self.window
     }
 
+    /// Moves the window down the stack to `slot`. It moves by the number of places from where it
+    /// is, rather than to where that slot would put it, so it stays on its own monitor and keeps
+    /// wherever it was dragged.
+    pub fn move_down_to(&mut self, slot: usize) {
+        if slot >= self.slot {
+            return;
+        }
+        let dpi = self.state.dpi.get();
+        let step = scale(HEIGHT, dpi) + scale(STACK_GAP, dpi);
+        let places = (self.slot - slot) as i32;
+        let mut rect = RECT::default();
+        unsafe {
+            GetWindowRect(self.window, &mut rect);
+            SetWindowPos(
+                self.window,
+                ptr::null_mut(),
+                rect.left,
+                rect.top + step * places,
+                0,
+                0,
+                SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE,
+            );
+        }
+        self.slot = slot;
+    }
+
     pub fn finished(&self) -> bool {
         unsafe { IsWindow(self.window) == 0 }
     }
@@ -258,6 +306,24 @@ impl Drop for Notification {
     }
 }
 
+/// What the title bar says about the keyboard. Once the window is in front its keys work, so it
+/// says what they are; before that it says how to bring it there, if there is a way.
+fn key_hint(active: bool, answer_shortcut: Option<&str>) -> Option<String> {
+    if active {
+        return Some("ENTER: DONE   1 2 3: LATER".to_string());
+    }
+    answer_shortcut.map(|shortcut| format!("{} TO ANSWER", shortcut.to_uppercase()))
+}
+
+/// Where each notification in a stack belongs once the gaps are closed: the same order up from
+/// the corner, numbered from the bottom without skipping any.
+pub fn closed_up(slots: &[usize]) -> Vec<usize> {
+    slots
+        .iter()
+        .map(|slot| slots.iter().filter(|other| *other < slot).count())
+        .collect()
+}
+
 /// The line above the reminder. `pick` chooses the words, so a test can ask for each in turn.
 fn eyebrow(snoozes: u32, pick: u128) -> String {
     if snoozes == 0 {
@@ -268,7 +334,7 @@ fn eyebrow(snoozes: u32, pick: u128) -> String {
 }
 
 impl State {
-    fn new(text: &str, snoozes: u32, dpi: u32) -> Self {
+    fn new(text: &str, snoozes: u32, dpi: u32, answer_shortcut: Option<&str>) -> Self {
         Self {
             text: wide(text),
             eyebrow: wide(&eyebrow(snoozes, crate::reminder::random())),
@@ -284,6 +350,20 @@ impl State {
             tracking: Cell::new(false),
             dpi: Cell::new(dpi),
             fonts: Cell::new(Fonts::new(dpi)),
+            answer_shortcut: answer_shortcut.map(str::to_string),
+            active: Cell::new(false),
+            scroll: Cell::new(0),
+            overflow: Cell::new(0),
+            line: Cell::new(0),
+        }
+    }
+
+    /// Scrolls the reminder by `pixels`, down for positive, without going past either end.
+    fn scroll_by(&self, window: HWND, pixels: i32) {
+        let scrolled = (self.scroll.get() + pixels).clamp(0, self.overflow.get());
+        if scrolled != self.scroll.get() {
+            self.scroll.set(scrolled);
+            unsafe { InvalidateRect(window, ptr::null(), 0) };
         }
     }
 
@@ -487,7 +567,7 @@ fn placement(slot: usize, dpi: u32) -> (i32, i32, i32, i32) {
 
     let width = scale(WIDTH, dpi);
     let height = scale(HEIGHT, dpi);
-    let margin = scale(12, dpi);
+    let margin = scale(STACK_GAP, dpi);
     let step = (height + margin) * slot as i32;
 
     (
@@ -567,6 +647,23 @@ unsafe extern "system" fn window_proc(
             }
             0
         }
+        // Windows sends the wheel to the window under the pointer unless that has been turned off,
+        // so this arrives without the notification having to take the foreground. A notch is
+        // 120, and finer amounts come from touchpads.
+        WM_MOUSEWHEEL => {
+            let delta = (wparam >> 16) as u16 as i16;
+            state.scroll_by(window, -i32::from(delta) * state.line.get() / 120);
+            0
+        }
+        // The title bar says different things in front and behind. Windows still has to see the
+        // message, since its own handling is what gives the window the keyboard focus.
+        WM_ACTIVATE => {
+            state.active.set(wparam & 0xffff != 0);
+            unsafe {
+                InvalidateRect(window, &layout.titlebar, 0);
+                DefWindowProcW(window, message, wparam, lparam)
+            }
+        }
         WM_KEYDOWN => {
             match wparam as u16 {
                 VK_RETURN => answer(window, state, DONE),
@@ -576,6 +673,8 @@ unsafe extern "system" fn window_proc(
                 }
                 // 1, 2 and 3 pick the snoozes from the left.
                 key @ (0x31..=0x33) => answer(window, state, key as usize - 0x31),
+                VK_UP => state.scroll_by(window, -state.line.get()),
+                VK_DOWN => state.scroll_by(window, state.line.get()),
                 // M steps the character through every mood and then hands it back to the
                 // history. Debug builds only: reaching Angry for real takes six snoozes, which
                 // is no way to look at a drawing.
@@ -667,6 +766,100 @@ fn track_mouse(window: HWND, state: &State) {
 }
 
 /// Draws the whole window into a bitmap and blits it, so nothing flickers as the character moves.
+/// The reminder, scrolled to where it has been scrolled to, and a bar beside it when it is too
+/// long to show whole.
+///
+/// The text is drawn in full and clipped to its box, so a line half past the bottom shows as
+/// half a line, which says there is more as plainly as the bar does.
+fn paint_message(buffer: HDC, state: &State, message: &RECT, dpi: u32) {
+    let font = state.fonts.get().message;
+    let content = wrapped_height(buffer, &state.text, font, message.right - message.left);
+    let visible = message.bottom - message.top;
+    let overflow = (content - visible).max(0);
+    state.overflow.set(overflow);
+    state.line.set(line_height(buffer, font));
+    // A change of scale can leave the text shorter than where it was scrolled to.
+    let scroll = state.scroll.get().min(overflow);
+    state.scroll.set(scroll);
+
+    let scrolled = RECT {
+        top: message.top - scroll,
+        bottom: message.top - scroll + content.max(visible),
+        ..*message
+    };
+    unsafe {
+        IntersectClipRect(
+            buffer,
+            message.left,
+            message.top,
+            message.right,
+            message.bottom,
+        )
+    };
+    draw_text(
+        buffer,
+        &scrolled,
+        &state.text,
+        font,
+        INK,
+        0,
+        dpi,
+        DT_LEFT | DT_TOP | DT_WORDBREAK | DT_NOPREFIX,
+    );
+    unsafe { SelectClipRgn(buffer, ptr::null_mut()) };
+
+    if overflow > 0 {
+        let left = message.right + scale(6, dpi);
+        let track = RECT {
+            left,
+            top: message.top,
+            right: left + scale(SCROLL_BAR_WIDTH, dpi),
+            bottom: message.bottom,
+        };
+        let thumb_height = (visible * visible / content).max(scale(12, dpi));
+        let thumb_top = message.top + scroll * (visible - thumb_height) / overflow;
+        let thumb = RECT {
+            top: thumb_top,
+            bottom: thumb_top + thumb_height,
+            ..track
+        };
+        fill(buffer, &track, HOVER);
+        fill(buffer, &thumb, INK);
+    }
+}
+
+/// How tall `text` comes out wrapped to `width` in `font`.
+fn wrapped_height(hdc: HDC, text: &[u16], font: HFONT, width: i32) -> i32 {
+    let mut area = RECT {
+        left: 0,
+        top: 0,
+        right: width,
+        bottom: 0,
+    };
+    unsafe {
+        let previous = SelectObject(hdc, font as _);
+        DrawTextW(
+            hdc,
+            text.as_ptr(),
+            -1,
+            &mut area,
+            DT_CALCRECT | DT_LEFT | DT_WORDBREAK | DT_NOPREFIX,
+        );
+        SelectObject(hdc, previous);
+    }
+    area.bottom
+}
+
+fn line_height(hdc: HDC, font: HFONT) -> i32 {
+    unsafe {
+        let previous = SelectObject(hdc, font as _);
+        let mut metrics: TEXTMETRICW = mem::zeroed();
+        GetTextMetricsW(hdc, &mut metrics);
+        SelectObject(hdc, previous);
+        metrics.tmHeight
+    }
+}
+
 fn paint(window: HWND, state: &State, layout: &Layout) {
     let dpi = state.dpi.get();
     let fonts = state.fonts.get();
@@ -709,6 +902,22 @@ fn paint(window: HWND, state: &State, layout: &Layout) {
         dpi,
         DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX,
     );
+    if let Some(hint) = key_hint(state.active.get(), state.answer_shortcut.as_deref()) {
+        let beside_close = RECT {
+            right: layout.close.left - scale(8, dpi),
+            ..title_text
+        };
+        draw_text(
+            buffer,
+            &beside_close,
+            &wide(&hint),
+            fonts.label,
+            BAR_INK,
+            LABEL_TRACKING,
+            dpi,
+            DT_RIGHT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX,
+        );
+    }
 
     outline(buffer, &layout.face, INK);
     centred_block(buffer, &layout.face, &state.art(), fonts.persona, INK, dpi);
@@ -723,16 +932,7 @@ fn paint(window: HWND, state: &State, layout: &Layout) {
         dpi,
         DT_LEFT | DT_TOP | DT_SINGLELINE | DT_NOPREFIX,
     );
-    draw_text(
-        buffer,
-        &layout.message,
-        &state.text,
-        fonts.message,
-        INK,
-        0,
-        dpi,
-        DT_LEFT | DT_TOP | DT_WORDBREAK | DT_NOPREFIX,
-    );
+    paint_message(buffer, state, &layout.message, dpi);
 
     for (index, button) in layout.buttons.iter().enumerate() {
         let filled = index == DONE;
@@ -814,5 +1014,34 @@ mod tests {
             let line = format!("{words} (snoozed 99x)");
             assert!(line.len() <= ROOM, "{line}");
         }
+    }
+
+    #[test]
+    fn answering_one_in_the_middle_closes_the_gap() {
+        assert_eq!(closed_up(&[0, 2, 3]), [0, 1, 2]);
+        assert_eq!(closed_up(&[3, 0, 2]), [2, 0, 1]);
+    }
+
+    #[test]
+    fn a_stack_with_no_gap_stays_where_it_is() {
+        assert_eq!(closed_up(&[0, 1, 2]), [0, 1, 2]);
+        assert_eq!(closed_up(&[]), [] as [usize; 0]);
+    }
+
+    #[test]
+    fn behind_other_windows_it_says_how_to_reach_it() {
+        assert_eq!(
+            key_hint(false, Some("Ctrl+Alt+A")).as_deref(),
+            Some("CTRL+ALT+A TO ANSWER")
+        );
+        // No shortcut, nothing promised.
+        assert_eq!(key_hint(false, None), None);
+    }
+
+    #[test]
+    fn in_front_it_says_what_the_keys_do() {
+        let hint = key_hint(true, Some("Ctrl+Alt+A")).unwrap();
+        assert!(hint.contains("ENTER") && hint.contains("1 2 3"), "{hint}");
+        assert_eq!(key_hint(true, None), Some(hint));
     }
 }

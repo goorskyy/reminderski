@@ -57,6 +57,9 @@ struct App {
     /// Kept here so that storing a reminder can say so, and dropped with the application, which
     /// is what puts the icon away again.
     tray: Tray,
+    /// Named on every notification, so that it says how to reach it. None when another
+    /// application already had the combination, since then it would be a promise not kept.
+    answer_shortcut: Option<String>,
 }
 
 fn main() {
@@ -122,9 +125,13 @@ fn run() -> io::Result<()> {
     })?;
     // Answering one is a convenience by comparison. If something else already owns the
     // combination, say so in the log and carry on: the mouse still works.
-    if let Err(error) = register_hotkey(ANSWER_HOTKEY, settings.answer) {
-        log::problem(&format!("the answer shortcut is not available: {error}"));
-    }
+    let answer_shortcut = match register_hotkey(ANSWER_HOTKEY, settings.answer) {
+        Ok(()) => Some(settings::describe(settings.answer)),
+        Err(error) => {
+            log::problem(&format!("the answer shortcut is not available: {error}"));
+            None
+        }
+    };
 
     // Double-clicking an executable that goes on to show nothing at all looks like nothing
     // happened, which is the whole of what the shortcut needs saying about.
@@ -137,6 +144,7 @@ fn run() -> io::Result<()> {
         store,
         showing: Vec::new(),
         tray,
+        answer_shortcut,
     };
     app.run();
 
@@ -179,6 +187,7 @@ impl App {
             }
             self.collect_answered();
             self.withdraw_stale();
+            self.close_up_the_stack();
             self.deliver_due();
         }
     }
@@ -243,7 +252,7 @@ impl App {
 
         for (id, text, snoozes) in due {
             let slot = self.free_slot();
-            match Notification::show(&text, snoozes, id, slot) {
+            match Notification::show(&text, snoozes, id, slot, self.answer_shortcut.as_deref()) {
                 Ok(notification) => self.showing.push(notification),
                 // Without a window there is no way to tell the user, and re-trying every second
                 // would be worse than saying so once and leaving the reminder pending.
@@ -323,6 +332,15 @@ impl App {
 
     fn is_showing(&self, reminder: Id) -> bool {
         self.showing.iter().any(|shown| shown.reminder == reminder)
+    }
+
+    /// Moves the notifications above a gap down into it, so that answering one in the middle of
+    /// the stack does not leave a hole where it was.
+    fn close_up_the_stack(&mut self) {
+        let slots: Vec<usize> = self.showing.iter().map(|shown| shown.slot).collect();
+        for (shown, slot) in self.showing.iter_mut().zip(notify::closed_up(&slots)) {
+            shown.move_down_to(slot);
+        }
     }
 
     /// The lowest corner position no open notification is using.

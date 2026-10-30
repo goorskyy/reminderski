@@ -11,7 +11,3 @@ moment, fix them together.
   raised to 90% because at 80% the small text went foggy on a 100% screen. Whether
   the difference between the two screens was ever really about their DPI was never answered, so
   it may yet turn out that one number for every monitor is the wrong shape of fix.
-- Several notifications stack upwards, but the rest do not move down when one is answered.
-- A reminder too long for the window is clipped rather than scrolled.
-- Nothing on the window says that Ctrl+Alt+A reaches it, or that Enter and 1, 2, 3 answer it
-  once it has been reached.
