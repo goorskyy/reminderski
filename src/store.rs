@@ -82,8 +82,18 @@ impl Store {
         Ok(store)
     }
 
+    /// Neither this nor `has` sees a deleted reminder, so nothing can answer, snooze or bring
+    /// one back.
     pub fn find(&mut self, id: Id) -> Option<&mut Reminder> {
-        self.reminders.iter_mut().find(|reminder| reminder.id == id)
+        self.reminders
+            .iter_mut()
+            .find(|reminder| reminder.id == id && reminder.state != State::Deleted)
+    }
+
+    pub fn has(&self, id: Id) -> bool {
+        self.reminders
+            .iter()
+            .any(|reminder| reminder.id == id && reminder.state != State::Deleted)
     }
 
     pub fn save(&self) -> io::Result<()> {
@@ -181,6 +191,7 @@ fn state_word(state: State) -> &'static str {
     match state {
         State::Pending => "pending",
         State::Done => "done",
+        State::Deleted => "deleted",
     }
 }
 
@@ -188,6 +199,7 @@ fn parse_state(word: &str) -> Option<State> {
     match word {
         "pending" => Some(State::Pending),
         "done" => Some(State::Done),
+        "deleted" => Some(State::Deleted),
         _ => None,
     }
 }
@@ -377,6 +389,26 @@ mod tests {
 
         assert_eq!(store.find(wanted).unwrap().text, "second");
         assert!(store.find(Id::random()).is_none());
+    }
+
+    #[test]
+    fn a_deleted_reminder_stays_in_the_file_as_deleted() {
+        let loaded = round_trip(vec![reminder(1, State::Deleted, "gone")]);
+
+        assert_eq!(loaded.len(), 1);
+        assert!(loaded[0].state == State::Deleted);
+        assert_eq!(loaded[0].text, "gone");
+    }
+
+    #[test]
+    fn a_deleted_reminder_cannot_be_found() {
+        let path = temporary_path();
+        let mut store = Store::open(path).unwrap();
+        store.reminders.push(reminder(1, State::Deleted, "gone"));
+        let id = store.reminders[0].id;
+
+        assert!(store.find(id).is_none());
+        assert!(!store.has(id));
     }
 
     #[test]

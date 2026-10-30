@@ -20,6 +20,9 @@ const DAY: u32 = 24 * 3600;
 pub enum State {
     Pending,
     Done,
+    /// Kept in the file only so that a later sync can tell the reminder went, rather than
+    /// that it is missing. To everything else it is gone.
+    Deleted,
 }
 
 /// What a reminder is known by, for as long as it exists.

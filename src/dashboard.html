@@ -162,6 +162,12 @@
 
     const actions = document.createElement("div");
     actions.className = "actions";
+    // First rather than last, so that it is as far as it can be from Done.
+    actions.append(action("Delete", () => {
+      if (confirm(`Delete this reminder for good?\n\n${reminder.text}`)) {
+        send(`/reminders/${reminder.id}/delete`);
+      }
+    }));
     if (reminder.done) {
       actions.append(action("Put back", () => send(`/reminders/${reminder.id}/pending`)));
     } else {

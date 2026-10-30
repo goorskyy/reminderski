@@ -162,8 +162,13 @@ fn list(store: &Arc<Mutex<Store>>) -> String {
         return "[]".to_string();
     };
 
+    let shown = store
+        .reminders
+        .iter()
+        .filter(|reminder| reminder.state != State::Deleted);
+
     let mut json = String::from("[");
-    for (index, reminder) in store.reminders.iter().enumerate() {
+    for (index, reminder) in shown.enumerate() {
         if index > 0 {
             json.push(',');
         }
@@ -195,6 +200,7 @@ fn act(target: &str, store: &Arc<Mutex<Store>>) -> Option<String> {
     match action {
         "done" => reminder.state = State::Done,
         "pending" => reminder.state = State::Pending,
+        "delete" => reminder.state = State::Deleted,
         "snooze" => {
             let minutes: u64 = parts.next()?.parse().ok()?;
             reminder.due_unix = reminder::now_unix() + minutes * 60;
@@ -314,6 +320,31 @@ mod tests {
         assert!(act("/reminders/0/done", &store).is_none());
         assert!(act("/nonsense", &store).is_none());
         assert!(act(&target(&store, 0, "snooze"), &store).is_none());
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn a_deleted_reminder_is_no_longer_listed() {
+        let (store, path) = store_with(&["water the plants", "call the dentist"]);
+        assert!(act(&target(&store, 0, "delete"), &store).is_some());
+
+        let json = list(&store);
+        assert!(!json.contains("water the plants"));
+        assert!(json.contains("call the dentist"));
+        assert!(store.lock().unwrap().reminders[0].state == State::Deleted);
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn a_deleted_reminder_cannot_be_brought_back() {
+        let (store, path) = store_with(&["water the plants"]);
+        assert!(act(&target(&store, 0, "delete"), &store).is_some());
+
+        assert!(act(&target(&store, 0, "pending"), &store).is_none());
+        assert!(act(&target(&store, 0, "done"), &store).is_none());
+        assert!(act(&target(&store, 0, "snooze/30"), &store).is_none());
+        assert!(act(&target(&store, 0, "delete"), &store).is_none());
+        assert!(store.lock().unwrap().reminders[0].state == State::Deleted);
         let _ = std::fs::remove_file(&path);
     }
 

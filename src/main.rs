@@ -180,6 +180,7 @@ impl App {
                 return;
             }
             self.collect_answered();
+            self.withdraw_deleted();
             self.deliver_due();
         }
     }
@@ -293,6 +294,22 @@ impl App {
                 "could not record the answered reminder(s): {error}"
             ));
         }
+    }
+
+    /// Takes down the notification of a reminder deleted from the dashboard while it was open.
+    /// Its answer would be passed over anyway, and it should not go on asking about something
+    /// that no longer exists.
+    fn withdraw_deleted(&mut self) {
+        let gone: Vec<Id> = {
+            let store = self.reminders();
+            self.showing
+                .iter()
+                .map(|shown| shown.reminder)
+                .filter(|id| !store.has(*id))
+                .collect()
+        };
+        // Dropping a notification is what closes its window.
+        self.showing.retain(|shown| !gone.contains(&shown.reminder));
     }
 
     /// The reminders, for as long as the returned guard lives. Nothing that opens a window or
