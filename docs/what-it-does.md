@@ -16,8 +16,17 @@ against it.
 ## The executable
 
 Built from this repository on GitHub's hosted Windows runners when a version is tagged, for x64
-and ARM64. Each release carries a `checksums.txt` with the SHA-256 of every executable, so a
-copy can be matched to the release it came from, or allowed by its hash.
+and ARM64; never on a developer's machine. Each release carries a `checksums.txt` with the
+SHA-256 of every executable, so a copy can be matched to the release it came from, or allowed by
+its hash. GitHub also signs a provenance statement for each executable, saying which workflow
+and which commit built it, which can be checked without trusting the download page:
+
+```
+gh attestation verify reminderski-x86_64-pc-windows-msvc.exe --repo goorskyy/reminderski
+```
+
+The executable itself is not signed yet, so Windows names its publisher as unknown. A
+certificate has been applied for; [code-signing.md](code-signing.md) says where that stands.
 
 It is written in Rust, and its only dependencies are the Rust standard library and
 [`windows-sys`](https://crates.io/crates/windows-sys), Microsoft's own bindings to the Windows
@@ -147,5 +156,5 @@ is being typed.
 - **Files and registry:** Process Monitor from Sysinternals, filtered on `reminderski.exe`.
 - **Network:** `netstat -ano`, filtered on its process ID, shows at most one listening socket on
   127.0.0.1, and none with `dashboard = off`.
-- **The executable:** compare its SHA-256 with the release's `checksums.txt`, or build it from
-  this repository.
+- **The executable:** `gh attestation verify` as above, or compare its SHA-256 with the
+  release's `checksums.txt`, or build it from this repository.
