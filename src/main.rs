@@ -180,7 +180,7 @@ impl App {
                 return;
             }
             self.collect_answered();
-            self.withdraw_deleted();
+            self.withdraw_stale();
             self.deliver_due();
         }
     }
@@ -296,20 +296,23 @@ impl App {
         }
     }
 
-    /// Takes down the notification of a reminder deleted from the dashboard while it was open.
-    /// Its answer would be passed over anyway, and it should not go on asking about something
-    /// that no longer exists.
-    fn withdraw_deleted(&mut self) {
-        let gone: Vec<Id> = {
+    /// Takes down the notification of a reminder that stopped being due while it was open:
+    /// deleted, finished, snoozed or moved to a later time from the dashboard. Answering it
+    /// would undo what was just done there, and if the reminder comes due again it gets a
+    /// notification of its own, with whatever its text is by then.
+    fn withdraw_stale(&mut self) {
+        let now = reminder::now_unix();
+        let stale: Vec<Id> = {
             let store = self.reminders();
             self.showing
                 .iter()
                 .map(|shown| shown.reminder)
-                .filter(|id| !store.has(*id))
+                .filter(|id| !store.is_due(*id, now))
                 .collect()
         };
         // Dropping a notification is what closes its window.
-        self.showing.retain(|shown| !gone.contains(&shown.reminder));
+        self.showing
+            .retain(|shown| !stale.contains(&shown.reminder));
     }
 
     /// The reminders, for as long as the returned guard lives. Nothing that opens a window or

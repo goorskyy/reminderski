@@ -9,10 +9,11 @@
 //! connection, no keep-alive, no compression, no ranges. It is deliberately small rather than
 //! general, and it listens on 127.0.0.1 so nothing outside this machine can reach it.
 
-use std::io::{self, BufRead, BufReader, Write};
+use std::io::{self, BufRead, BufReader, Read, Write};
 use std::net::{Ipv4Addr, SocketAddr, TcpListener, TcpStream};
 use std::sync::{Arc, Mutex};
 use std::thread;
+use std::time::Duration;
 
 use windows_sys::Win32::UI::WindowsAndMessaging::{PostThreadMessageW, WM_NULL};
 
@@ -25,6 +26,10 @@ const PREFERRED_PORT: u16 = 7654;
 
 /// The page itself, built into the executable so there is still only one file to download.
 const PAGE: &str = include_str!("dashboard.html");
+
+/// More than any reminder anybody writes by hand, and little enough to hold in memory without a
+/// second thought.
+const LONGEST_BODY: usize = 64 * 1024;
 
 /// Serves the dashboard until the process ends. Returns the address it ended up on.
 pub fn start(store: Arc<Mutex<Store>>, wake: u32) -> io::Result<String> {
@@ -53,15 +58,19 @@ fn bind() -> io::Result<TcpListener> {
 }
 
 fn serve(mut stream: TcpStream, store: &Arc<Mutex<Store>>, wake: u32) {
-    let Some(request) = read_request_line(&stream) else {
+    // Only one connection is served at a time, so one that goes quiet halfway through a request
+    // would otherwise hold up the page for good.
+    let _ = stream.set_read_timeout(Some(Duration::from_secs(5)));
+
+    let Some(request) = read_request(&stream) else {
         return;
     };
-    let mut words = request.split_whitespace();
+    let mut words = request.line.split_whitespace();
     let (Some(method), Some(target)) = (words.next(), words.next()) else {
         return;
     };
 
-    let answer = route(method, target, store, wake);
+    let answer = route(method, target, &request.body, store, wake);
     if let Err(error) = answer.write_to(&mut stream) {
         // A browser that navigated away mid-response is not worth reporting.
         if error.kind() != io::ErrorKind::BrokenPipe {
@@ -70,26 +79,45 @@ fn serve(mut stream: TcpStream, store: &Arc<Mutex<Store>>, wake: u32) {
     }
 }
 
-/// The first line, with the rest of the headers read and dropped so the browser is not left
-/// writing into a socket nobody is reading.
-fn read_request_line(stream: &TcpStream) -> Option<String> {
+struct Request {
+    line: String,
+    body: String,
+}
+
+/// The first line and the body. The other headers are read and dropped, so that the browser is
+/// not left writing into a socket nobody is reading; only the body's length is wanted from them.
+fn read_request(stream: &TcpStream) -> Option<Request> {
     let mut reader = BufReader::new(stream);
-    let mut first = String::new();
-    if reader.read_line(&mut first).ok()? == 0 {
+    let mut line = String::new();
+    if reader.read_line(&mut line).ok()? == 0 {
         return None;
     }
 
+    let mut length = 0;
     let mut header = String::new();
     loop {
         header.clear();
         match reader.read_line(&mut header) {
             Ok(0) => break,
             Ok(_) if header.trim().is_empty() => break,
-            Ok(_) => {}
+            Ok(_) => {
+                if let Some((name, value)) = header.split_once(':')
+                    && name.trim().eq_ignore_ascii_case("content-length")
+                {
+                    length = value.trim().parse().ok()?;
+                }
+            }
             Err(_) => break,
         }
     }
-    Some(first)
+
+    if length > LONGEST_BODY {
+        return None;
+    }
+    let mut body = vec![0; length];
+    reader.read_exact(&mut body).ok()?;
+    let body = String::from_utf8(body).ok()?;
+    Some(Request { line, body })
 }
 
 struct Answer {
@@ -123,6 +151,15 @@ impl Answer {
         }
     }
 
+    /// Said in words, because the page shows it to the reader as it is.
+    fn refused(reason: &str) -> Self {
+        Self {
+            status: "400 Bad Request",
+            kind: "text/plain; charset=utf-8",
+            body: reason.to_string(),
+        }
+    }
+
     fn write_to(&self, stream: &mut TcpStream) -> io::Result<()> {
         // Closing after each reply is what keeps a browser's idle connection from holding up
         // the next request, which matters when only one is served at a time.
@@ -138,21 +175,33 @@ impl Answer {
     }
 }
 
-fn route(method: &str, target: &str, store: &Arc<Mutex<Store>>, wake: u32) -> Answer {
+fn route(method: &str, target: &str, body: &str, store: &Arc<Mutex<Store>>, wake: u32) -> Answer {
     match (method, target) {
         ("GET", "/") => Answer::html(PAGE),
         ("GET", "/reminders") => Answer::json(list(store)),
+        ("POST", _) if target.ends_with("/edit") => match edit(target, body, store) {
+            Some(Ok(())) => {
+                wake_the_loop(wake);
+                Answer::json("{\"ok\":true}".to_string())
+            }
+            Some(Err(reason)) => Answer::refused(reason),
+            None => Answer::missing(),
+        },
         ("POST", _) => match act(target, store) {
             Some(body) => {
-                // The message loop may be asleep with nothing due for an hour. Nudging it makes
-                // it work out again when the next reminder is, now that one has moved.
-                unsafe { PostThreadMessageW(wake, WM_NULL, 0, 0) };
+                wake_the_loop(wake);
                 Answer::json(body)
             }
             None => Answer::missing(),
         },
         _ => Answer::missing(),
     }
+}
+
+/// The message loop may be asleep with nothing due for an hour. Nudging it makes it work out
+/// again when the next reminder is, now that one has moved.
+fn wake_the_loop(wake: u32) {
+    unsafe { PostThreadMessageW(wake, WM_NULL, 0, 0) };
 }
 
 /// Every reminder, as the page wants them. The time is sent as an instant and turned into
@@ -216,6 +265,43 @@ fn act(target: &str, store: &Arc<Mutex<Store>>) -> Option<String> {
     Some("{\"ok\":true}".to_string())
 }
 
+/// `/reminders/<id>/edit`. The body is the new time on its first line, written the way the form
+/// takes it, and the new text after it. A blank time keeps the one the reminder has.
+///
+/// None when there is no such waiting reminder; a reason, for the reader, when what was asked
+/// for cannot be done.
+fn edit(target: &str, body: &str, store: &Arc<Mutex<Store>>) -> Option<Result<(), &'static str>> {
+    let id = target.strip_prefix("/reminders/")?.strip_suffix("/edit")?;
+    let id = Id::parse(id)?;
+
+    let (when, text) = body.split_once('\n').unwrap_or((body, ""));
+    if text.trim().is_empty() {
+        return Some(Err("A reminder needs something to remind you of."));
+    }
+    let delay = match when.trim() {
+        "" => None,
+        when => match reminder::parse_when(when) {
+            Some(delay) => Some(delay),
+            None => return Some(Err("That time cannot be read.")),
+        },
+    };
+
+    let mut store = store.lock().ok()?;
+    let reminder = store.find(id)?;
+    if reminder.state != State::Pending {
+        return None;
+    }
+    reminder.text = text.to_string();
+    if let Some(delay) = delay {
+        reminder.due_unix = reminder::now_unix() + delay.as_secs();
+    }
+
+    if let Err(error) = store.save() {
+        log::problem(&format!("dashboard could not save: {error}"));
+    }
+    Some(Ok(()))
+}
+
 fn escape(text: &str) -> String {
     let mut escaped = String::with_capacity(text.len());
     for character in text.chars() {
@@ -263,6 +349,114 @@ mod tests {
     fn target(store: &Arc<Mutex<Store>>, position: usize, action: &str) -> String {
         let id = store.lock().unwrap().reminders[position].id;
         format!("/reminders/{id}/{action}")
+    }
+
+    /// What the dashboard reads from a browser that sends exactly these bytes and then stops.
+    fn request_from(raw: &[u8]) -> Option<Request> {
+        let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
+        let mut browser = TcpStream::connect(listener.local_addr().unwrap()).unwrap();
+        browser.write_all(raw).unwrap();
+        browser.shutdown(std::net::Shutdown::Write).unwrap();
+        let (stream, _) = listener.accept().unwrap();
+        read_request(&stream)
+    }
+
+    #[test]
+    fn reads_the_body_a_request_says_it_has() {
+        let body = "in 2h\nZażółć gęślą jaźń";
+        let raw = format!(
+            "POST /x HTTP/1.1\r\nHost: here\r\ncontent-length: {}\r\n\r\n{body}",
+            body.len()
+        );
+
+        let request = request_from(raw.as_bytes()).unwrap();
+        assert!(request.line.starts_with("POST /x "));
+        assert_eq!(request.body, body);
+    }
+
+    #[test]
+    fn a_request_without_a_length_has_no_body() {
+        let request = request_from(b"GET / HTTP/1.1\r\nHost: here\r\n\r\n").unwrap();
+        assert_eq!(request.body, "");
+    }
+
+    #[test]
+    fn refuses_a_body_too_long_or_shorter_than_it_claims() {
+        let huge = format!(
+            "POST /x HTTP/1.1\r\nContent-Length: {}\r\n\r\n",
+            LONGEST_BODY + 1
+        );
+        assert!(request_from(huge.as_bytes()).is_none());
+        assert!(request_from(b"POST /x HTTP/1.1\r\nContent-Length: 10\r\n\r\nshort").is_none());
+    }
+
+    #[test]
+    fn editing_changes_the_text_and_the_time() {
+        let (store, path) = store_with(&["water the plants"]);
+        let target = target(&store, 0, "edit");
+
+        assert_eq!(
+            edit(&target, "in 2h\nwater the cactus", &store),
+            Some(Ok(()))
+        );
+        let store_guard = store.lock().unwrap();
+        let reminder = &store_guard.reminders[0];
+        assert_eq!(reminder.text, "water the cactus");
+        let due_in = reminder.due_unix - reminder::now_unix();
+        assert!((7199..=7201).contains(&due_in), "due in {due_in}s");
+        drop(store_guard);
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn editing_with_a_blank_time_keeps_the_time() {
+        let (store, path) = store_with(&["water the plants"]);
+        let due = store.lock().unwrap().reminders[0].due_unix;
+
+        let target = target(&store, 0, "edit");
+        assert_eq!(
+            edit(&target, "  \nfirst line\nsecond line", &store),
+            Some(Ok(()))
+        );
+        let store_guard = store.lock().unwrap();
+        assert_eq!(store_guard.reminders[0].text, "first line\nsecond line");
+        assert_eq!(store_guard.reminders[0].due_unix, due);
+        drop(store_guard);
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn an_edit_that_cannot_be_read_changes_nothing() {
+        let (store, path) = store_with(&["water the plants"]);
+        let due = store.lock().unwrap().reminders[0].due_unix;
+        let target = target(&store, 0, "edit");
+
+        assert!(matches!(
+            edit(&target, "whenever\nnew text", &store),
+            Some(Err(_))
+        ));
+        assert!(matches!(edit(&target, "in 2h\n   ", &store), Some(Err(_))));
+        assert!(matches!(edit(&target, "in 2h", &store), Some(Err(_))));
+
+        let store_guard = store.lock().unwrap();
+        assert_eq!(store_guard.reminders[0].text, "water the plants");
+        assert_eq!(store_guard.reminders[0].due_unix, due);
+        drop(store_guard);
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn only_a_waiting_reminder_can_be_edited() {
+        let (store, path) = store_with(&["water the plants"]);
+        let target = target(&store, 0, "edit");
+        store.lock().unwrap().reminders[0].state = State::Done;
+
+        assert_eq!(edit(&target, "in 2h\nnew text", &store), None);
+        let unknown = format!("/reminders/{}/edit", Id::random());
+        assert_eq!(edit(&unknown, "in 2h\nnew text", &store), None);
+        assert_eq!(edit("/reminders/0/edit", "in 2h\nnew text", &store), None);
+        assert_eq!(store.lock().unwrap().reminders[0].text, "water the plants");
+        let _ = std::fs::remove_file(&path);
     }
 
     #[test]

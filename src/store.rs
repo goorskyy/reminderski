@@ -82,18 +82,18 @@ impl Store {
         Ok(store)
     }
 
-    /// Neither this nor `has` sees a deleted reminder, so nothing can answer, snooze or bring
-    /// one back.
+    /// Never a deleted reminder, so nothing can answer, snooze or bring one back.
     pub fn find(&mut self, id: Id) -> Option<&mut Reminder> {
         self.reminders
             .iter_mut()
             .find(|reminder| reminder.id == id && reminder.state != State::Deleted)
     }
 
-    pub fn has(&self, id: Id) -> bool {
+    /// Whether this reminder is still there and still waiting to be answered at `now`.
+    pub fn is_due(&self, id: Id, now: u64) -> bool {
         self.reminders
             .iter()
-            .any(|reminder| reminder.id == id && reminder.state != State::Deleted)
+            .any(|reminder| reminder.id == id && reminder.is_due(now))
     }
 
     pub fn save(&self) -> io::Result<()> {
@@ -408,7 +408,21 @@ mod tests {
         let id = store.reminders[0].id;
 
         assert!(store.find(id).is_none());
-        assert!(!store.has(id));
+        assert!(!store.is_due(id, u64::MAX));
+    }
+
+    #[test]
+    fn a_reminder_is_due_only_while_it_waits_and_its_time_has_come() {
+        let path = temporary_path();
+        let mut store = Store::open(path).unwrap();
+        store.reminders.push(reminder(100, State::Pending, "tea"));
+        let id = store.reminders[0].id;
+
+        assert!(!store.is_due(id, 99));
+        assert!(store.is_due(id, 100));
+        store.reminders[0].state = State::Done;
+        assert!(!store.is_due(id, 100));
+        assert!(!store.is_due(Id::random(), 100));
     }
 
     #[test]

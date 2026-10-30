@@ -90,6 +90,21 @@
   button:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
 
   .empty { color: var(--label); font-size: 13px; }
+
+  .editor { flex: 1 1 100%; display: flex; flex-direction: column; gap: 10px; }
+  .editor textarea, .editor input {
+    font: inherit;
+    color: inherit;
+    background: transparent;
+    border: 1px solid var(--ink);
+    border-radius: 0;
+    padding: 8px 10px;
+    width: 100%;
+  }
+  .editor textarea { resize: vertical; min-height: 4.5em; }
+  .editor textarea:focus, .editor input:focus { outline: 2px solid var(--ink); outline-offset: 2px; }
+  .editor .problem { font-size: 13px; font-weight: 700; min-height: 1.5em; }
+  .editor .actions { justify-content: flex-end; }
 </style>
 </head>
 <body>
@@ -171,6 +186,7 @@
     if (reminder.done) {
       actions.append(action("Put back", () => send(`/reminders/${reminder.id}/pending`)));
     } else {
+      actions.append(action("Edit", () => edit(item, reminder)));
       for (const [label, minutes] of SNOOZES) {
         const howLong = minutes ?? minutesUntilTomorrowMorning();
         actions.append(action(label, () => send(`/reminders/${reminder.id}/snooze/${howLong}`)));
@@ -180,6 +196,70 @@
 
     item.append(what, actions);
     return item;
+  }
+
+  // The row being edited, if any. The list is not redrawn while it is open, since that would
+  // throw away what is being typed.
+  let editing = null;
+
+  function edit(item, reminder) {
+    if (editing) editing.cancel();
+
+    const editor = document.createElement("div");
+    editor.className = "editor";
+
+    const text = document.createElement("textarea");
+    text.value = reminder.text;
+    text.rows = Math.min(8, reminder.text.split("\n").length + 1);
+
+    const time = document.createElement("input");
+    time.placeholder = "Keep the time, or: in 2h · at 3pm · friday at 9";
+    time.setAttribute("aria-label", "When");
+
+    const problem = document.createElement("div");
+    problem.className = "problem";
+    problem.setAttribute("role", "alert");
+
+    const close = () => {
+      editing = null;
+      item.replaceWith(row(reminder));
+      // Anything done elsewhere on the page while this was open has not been drawn yet.
+      load();
+    };
+    const save = async () => {
+      const answer = await fetch(`/reminders/${reminder.id}/edit`, {
+        method: "POST",
+        body: `${time.value}\n${text.value}`,
+      });
+      if (answer.ok) {
+        editing = null;
+        await load();
+      } else if (answer.status === 404) {
+        problem.textContent = "This reminder is no longer waiting.";
+      } else {
+        problem.textContent = await answer.text();
+      }
+    };
+
+    for (const field of [text, time]) {
+      field.addEventListener("keydown", (event) => {
+        if (event.key === "Escape") close();
+        // Enter starts a new line in the text, so saving from there wants Ctrl as well.
+        if (event.key === "Enter" && (field === time || event.ctrlKey)) {
+          event.preventDefault();
+          save();
+        }
+      });
+    }
+
+    const actions = document.createElement("div");
+    actions.className = "actions";
+    actions.append(action("Cancel", close), action("Save", save, true));
+
+    editor.append(text, time, problem, actions);
+    item.replaceChildren(editor);
+    editing = { cancel: close };
+    text.focus();
   }
 
   function fill(list, reminders, nothing) {
@@ -204,6 +284,8 @@
       document.getElementById("count").textContent = "NOT RUNNING";
       return;
     }
+    // Checked after the wait rather than before it, since an editor may have opened meanwhile.
+    if (editing) return;
 
     const waiting = reminders.filter((r) => !r.done).sort((a, b) => a.due - b.due);
     const done = reminders.filter((r) => r.done).sort((a, b) => b.due - a.due);
